@@ -1,0 +1,435 @@
+---
+description: Configuration options in WXT - browser startup, TypeScript, build modes, Vite, and hooks
+globs: 
+alwaysApply: false
+---
+# Configuration
+
+WXT offers extensive configuration options to customize the build process, development experience, and extension behavior.
+
+## WXT Configuration
+
+The main configuration file is `wxt.config.ts`, which should export a configuration object:
+
+```typescript
+// wxt.config.ts
+export default defineConfig({
+  // Configuration options here
+  manifest: {
+    name: 'My Extension',
+  },
+});
+```
+
+### Key Configuration Options
+
+```typescript
+export default defineConfig({
+  // Project structure
+  srcDir: 'src',                   // Source directory (default: ".")
+  entrypointsDir: 'entries',       // Entrypoints directory (default: "entrypoints")
+  outDir: 'dist',                  // Output directory (default: ".output")
+  publicDir: 'static',             // Public directory (default: "public")
+  
+  // Manifest configuration
+  manifest: {
+    name: 'My Extension',
+    version: '1.0.0',
+    permissions: ['storage', 'tabs'],
+  },
+  
+  // Development server options
+  dev: {
+    browserOptions: {
+      // Browser-specific options
+    },
+  },
+  
+  // Target browsers and manifest versions
+  browser: 'chrome',               // Default browser target
+  manifestVersion: 3,              // Default manifest version
+  
+  // Build options
+  vite: {
+    // Vite configuration
+  },
+  
+  // Extension hooks
+  hooks: {
+    'build:manifestGenerated': (wxt, manifest) => {
+      // Modify manifest before it's written
+    },
+  },
+  
+  // Framework modules
+  modules: [
+    '@wxt-dev/module-vue',
+  ],
+});
+```
+
+## Browser Startup Configuration
+
+WXT uses `web-ext` to launch browsers for development. Configure this in `web-ext.config.ts`:
+
+```typescript
+// web-ext.config.ts
+export default {
+  // Chrome options
+  chromiumProfile: 'wxt-dev',     // Profile name
+  chromiumBinary: '/usr/bin/google-chrome',  // Custom browser path
+  
+  // Firefox options
+  firefoxProfile: 'wxt-dev',      // Profile name
+  firefoxBinary: '/usr/bin/firefox-developer',  // Custom browser path
+  
+  // General options for all browsers
+  startUrl: [
+    'https://example.com',         // Open this URL on startup
+    'about:addons',                // Open Firefox add-ons page
+  ],
+  
+  // Advanced options
+  args: ['--incognito'],           // Additional launch args
+  noReload: true,                  // Disable extension auto-reload
+  keepProfileChanges: true,        // Keep profile changes between runs
+};
+```
+
+### Browser Profiles
+
+By default, WXT creates temporary browser profiles that are discarded after development. To keep settings and state, configure a persistent profile:
+
+```typescript
+// web-ext.config.ts
+export default {
+  // Create a named profile that persists between runs
+  chromiumProfile: 'my-extension-dev',
+  firefoxProfile: 'my-extension-dev',
+  keepProfileChanges: true,
+  
+  // Optional: customize profile paths
+  chromiumProfilePath: './dev-profiles/chrome',
+  firefoxProfilePath: './dev-profiles/firefox',
+};
+```
+
+### Testing on Real Sites
+
+Start your development browser with specific websites open:
+
+```typescript
+// web-ext.config.ts
+export default {
+  startUrl: [
+    'https://example.com/page1',
+    'https://example.com/page2',
+  ],
+};
+```
+
+For Firefox-specific configuration:
+
+```typescript
+// web-ext.config.ts
+export default {
+  startUrl: [
+    'about:debugging#/runtime/this-firefox', // Firefox debugging page
+    'about:addons',                          // Firefox add-ons page
+  ],
+};
+```
+
+## TypeScript Configuration
+
+WXT generates TypeScript configuration files for your project in the `.wxt` directory and extends your project's `tsconfig.json`.
+
+### Base Configuration
+
+Create a basic `tsconfig.json` file:
+
+```json
+{
+  "extends": "./.wxt/tsconfig.json",
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "jsx": "preserve",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "esModuleInterop": true,
+    "noEmit": true,
+    "skipLibCheck": true
+  },
+  "include": [
+    ".wxt/auto-imports.d.ts",
+    "**/*.ts",
+    "**/*.tsx",
+    "**/*.vue"
+  ]
+}
+```
+
+### Path Aliases
+
+WXT sets up common path aliases for you:
+
+```typescript
+// These imports work automatically
+import { someFunction } from '~/utils/helpers';  // ~/ points to your srcDir
+import { type Browser } from 'wxt/browser';      // wxt/* paths for WXT types
+import { someAutoImport } from '#imports';       // #imports for auto-imports
+```
+
+To add custom path aliases:
+
+```typescript
+// wxt.config.ts
+export default defineConfig({
+  vite: {
+    resolve: {
+      alias: {
+        '@components': '/absolute/path/to/components',
+        '@services': '/absolute/path/to/services',
+      },
+    },
+  },
+});
+```
+
+## Build Modes
+
+WXT supports different build modes for development, production, and testing:
+
+```bash
+# Development mode (default)
+pnpm wxt
+
+# Production mode
+pnpm wxt build
+
+# Development mode with watch
+pnpm wxt --watch
+```
+
+### Mode-Specific Configuration
+
+You can provide mode-specific configuration:
+
+```typescript
+// wxt.config.ts
+export default defineConfig({
+  manifest: ({ mode }) => ({
+    name: mode === 'development' 
+      ? 'My Extension (Dev)' 
+      : 'My Extension',
+  }),
+  
+  // Different source maps for dev/prod
+  vite: ({ mode }) => ({
+    build: {
+      sourcemap: mode === 'development' ? 'inline' : false,
+    },
+  }),
+});
+```
+
+### Environment-Specific Configuration
+
+Use `.env` files for different environments:
+
+```
+.env                 # Always loaded
+.env.development     # Only in development mode
+.env.production      # Only in production mode
+```
+
+## Vite Integration
+
+WXT is built on Vite and exposes Vite's configuration options:
+
+```typescript
+// wxt.config.ts
+export default defineConfig({
+  vite: {
+    // Standard Vite configuration
+    define: {
+      __APP_VERSION__: JSON.stringify('1.0.0'),
+    },
+    css: {
+      preprocessorOptions: {
+        scss: {
+          additionalData: `@import "~/styles/variables.scss";`,
+        },
+      },
+    },
+    plugins: [
+      // Add custom Vite plugins
+    ],
+    server: {
+      port: 3333,
+    },
+  },
+});
+```
+
+### Advanced Vite Configuration
+
+For more complex scenarios, use a function to get access to Vite's context:
+
+```typescript
+// wxt.config.ts
+export default defineConfig({
+  vite: ({ wxt, mode, browser, manifestVersion, command }) => {
+    return {
+      // Configuration specific to the target
+      build: {
+        rollupOptions: {
+          output: {
+            manualChunks: {
+              // Control chunk splitting
+              vendor: ['react', 'react-dom'],
+            },
+          },
+        },
+      },
+    };
+  },
+});
+```
+
+## Hook System
+
+WXT's hook system allows you to customize the build process:
+
+```typescript
+// wxt.config.ts
+export default defineConfig({
+  hooks: {
+    // Before building
+    'build:before': (wxt) => {
+      console.log('Starting build for', wxt.config.browser);
+    },
+    
+    // After entrypoints are discovered
+    'entrypoints:found': (wxt, entrypoints) => {
+      // Add a custom entrypoint programmatically
+      entrypoints.push({
+        name: 'custom-script',
+        inputPath: 'path/to/script.js',
+        type: 'content-script',
+      });
+    },
+    
+    // After manifest is generated but before it's written
+    'build:manifestGenerated': (wxt, manifest) => {
+      // Modify the manifest
+      manifest.name = `${manifest.name} - ${wxt.config.browser}`;
+      
+      // Add content scripts programmatically
+      manifest.content_scripts = [
+        ...(manifest.content_scripts || []),
+        {
+          matches: ['*://*.example.com/*'],
+          js: ['content-scripts/example.js'],
+        },
+      ];
+    },
+    
+    // After the extension is built
+    'build:done': (wxt) => {
+      console.log('Build completed!');
+    },
+  },
+});
+```
+
+### Available Hooks
+
+WXT provides many hooks for different stages of the build process:
+
+```typescript
+export default defineConfig({
+  hooks: {
+    // Prepare hooks
+    'prepare:before': (wxt) => {},
+    'prepare:after': (wxt) => {},
+    
+    // Config hooks
+    'config:resolved': (wxt) => {},
+    
+    // Entrypoint hooks
+    'entrypoints:before': (wxt) => {},
+    'entrypoints:found': (wxt, entrypoints) => {},
+    'entrypoints:after': (wxt, entrypoints) => {},
+    
+    // Build hooks
+    'build:before': (wxt) => {},
+    'build:manifestGenerated': (wxt, manifest) => {},
+    'build:publicAssets': (wxt, assets) => {},
+    'build:done': (wxt) => {},
+    
+    // Dev server hooks
+    'dev:before': (wxt) => {},
+    'dev:after': (wxt, { port }) => {},
+    
+    // Browser startup hooks
+    'browser:before': (wxt, webExt) => {},
+    'browser:after': (wxt, webExt) => {},
+    
+    // Type generation hooks
+    'prepare:types': (wxt, entries) => {},
+  },
+});
+```
+
+## Integrating with ESLint and Other Tools
+
+For seamless integration with ESLint and other tools:
+
+### ESLint Configuration
+
+```javascript
+// eslint.config.mjs
+import autoImports from './.wxt/eslint-auto-imports.mjs';
+
+export default [
+  autoImports,
+  // Your other ESLint config
+];
+```
+
+### Package Scripts
+
+Add useful scripts to your `package.json`:
+
+```json
+{
+  "scripts": {
+    "dev": "wxt",
+    "dev:firefox": "wxt -b firefox",
+    "dev:watch": "wxt --watch",
+    "build": "wxt build",
+    "build:firefox": "wxt build -b firefox",
+    "zip": "wxt zip",
+    "zip:firefox": "wxt zip -b firefox",
+    "clean": "rm -rf .output",
+    "type-check": "tsc --noEmit",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "prepare": "wxt prepare"
+  }
+}
+```
+
+## Best Practices
+
+1. **Use TypeScript**: Always use TypeScript for better type checking and IDE support
+2. **Organize by Feature**: Group related files by feature, not by file type
+3. **Keep Config DRY**: Use function syntax for conditional configuration
+4. **Environment Variables**: Use `.env` files for environment-specific configuration
+5. **Hooks for Customization**: Use hooks instead of manual post-processing
+6. **Persistent Profiles**: Use named browser profiles during development
+7. **Custom Directories**: Use `srcDir` to separate source code from configuration 

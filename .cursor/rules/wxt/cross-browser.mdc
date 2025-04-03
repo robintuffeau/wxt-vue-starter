@@ -1,0 +1,488 @@
+---
+description: Cross-browser compatibility in WXT - targeting different browsers and manifest versions
+globs: 
+alwaysApply: false
+---
+# Cross-Browser Compatibility
+
+One of WXT's major strengths is its seamless support for multiple browsers and manifest versions. This allows you to build extensions that work consistently across Chrome, Firefox, Safari, Edge, and other Chromium-based browsers.
+
+## Targeting Different Browsers
+
+WXT lets you build for different browsers with a single command:
+
+```bash
+# Build for Chrome (default)
+pnpm wxt build
+
+# Build for Firefox
+pnpm wxt build -b firefox
+
+# Build for Edge
+pnpm wxt build -b edge
+
+# Build for Safari
+pnpm wxt build -b safari
+```
+
+### Supported Browsers
+
+WXT supports the following browsers:
+
+- `chrome`: Google Chrome and other Chromium-based browsers
+- `firefox`: Mozilla Firefox
+- `safari`: Apple Safari
+- `edge`: Microsoft Edge (Chromium-based)
+- `opera`: Opera Browser
+
+### Browser Detection at Runtime
+
+Use environment variables to detect the target browser at runtime:
+
+```typescript
+// Check which browser we're running in
+if (import.meta.env.CHROME) {
+  // Chrome-specific code
+} else if (import.meta.env.FIREFOX) {
+  // Firefox-specific code
+} else if (import.meta.env.SAFARI) {
+  // Safari-specific code
+}
+
+// Or use the BROWSER variable
+console.log(`Running in ${import.meta.env.BROWSER}`);
+```
+
+### Browser-Specific Configurations
+
+Configure your extension differently for each browser:
+
+```typescript
+// wxt.config.ts
+export default defineConfig({
+  manifest: ({ browser }) => {
+    const manifest = {
+      name: 'My Extension',
+      permissions: ['storage'],
+    };
+    
+    if (browser === 'firefox') {
+      // Firefox-specific configuration
+      return {
+        ...manifest,
+        browser_specific_settings: {
+          gecko: {
+            id: 'my-extension@example.com',
+            strict_min_version: '89.0',
+          },
+        },
+      };
+    }
+    
+    if (browser === 'safari') {
+      // Safari-specific configuration
+      return {
+        ...manifest,
+        // Safari needs additional info for the App Store
+        name: 'My Safari Extension',
+      };
+    }
+    
+    // Default for Chrome and others
+    return manifest;
+  },
+});
+```
+
+### Browser-Specific Entrypoints
+
+Include or exclude entrypoints for specific browsers:
+
+```typescript
+// entrypoints/popup.html
+<!DOCTYPE html>
+<html>
+<head>
+  <!-- Only include in Firefox and Chrome -->
+  <meta name="manifest.include" content="['firefox', 'chrome']" />
+  
+  <!-- Exclude from Safari -->
+  <meta name="manifest.exclude" content="['safari']" />
+</head>
+<body>
+  <div id="app"></div>
+  <script src="./main.ts" type="module"></script>
+</body>
+</html>
+```
+
+For TypeScript entrypoints:
+
+```typescript
+// entrypoints/sidebar.content.ts
+export default defineContentScript({
+  // Only include in Firefox (which supports sidebar)
+  include: ['firefox'],
+  
+  matches: ['<all_urls>'],
+  main(ctx) {
+    // Firefox sidebar content script
+  },
+});
+```
+
+### Browser-Specific Assets
+
+Organize browser-specific assets:
+
+```
+📂 public/
+   📂 chrome/
+      📄 chrome-specific-file.js
+   📂 firefox/
+      📄 firefox-specific-file.js
+   📂 shared/
+      📄 common-file.js
+```
+
+Access browser-specific assets:
+
+```typescript
+const browserSpecificFile = '/chrome/chrome-specific-file.js';
+const filePath = `/${import.meta.env.BROWSER}-specific-file.js`;
+```
+
+## Manifest Version Support
+
+WXT supports both Manifest V2 and V3, with automatic feature conversion between versions.
+
+### Specifying Manifest Version
+
+Set the default manifest version:
+
+```typescript
+// wxt.config.ts
+export default defineConfig({
+  manifestVersion: 3, // or 2
+});
+```
+
+Or build for a specific version:
+
+```bash
+# Build for MV3 (default)
+pnpm wxt build -b chrome
+
+# Build for MV2
+pnpm wxt build -b chrome-mv2
+```
+
+Available manifest version targets:
+- `chrome`: Chrome with MV3
+- `chrome-mv2`: Chrome with MV2
+- `firefox`: Firefox with MV2
+- `firefox-mv3`: Firefox with MV3
+- `safari`: Safari with MV2
+- `safari-mv3`: Safari with MV3
+- `edge`: Edge with MV3
+- `edge-mv2`: Edge with MV2
+
+### Manifest Version Detection
+
+Detect the manifest version at runtime:
+
+```typescript
+// Check manifest version
+if (import.meta.env.MANIFEST_VERSION === 3) {
+  // MV3-specific code
+} else {
+  // MV2-specific code
+}
+```
+
+### Version-Specific Configuration
+
+Configure your extension differently based on manifest version:
+
+```typescript
+// wxt.config.ts
+export default defineConfig({
+  manifest: ({ manifestVersion }) => {
+    // Base manifest
+    const manifest = {
+      name: 'My Extension',
+      description: 'A cross-browser extension',
+    };
+    
+    if (manifestVersion === 3) {
+      // MV3-specific manifest properties
+      return {
+        ...manifest,
+        action: {
+          default_popup: 'popup.html',
+        },
+        background: {
+          type: 'module',
+          service_worker: 'background.js',
+        },
+        host_permissions: [
+          'https://api.example.com/*',
+        ],
+      };
+    } else {
+      // MV2-specific manifest properties
+      return {
+        ...manifest,
+        browser_action: {
+          default_popup: 'popup.html',
+        },
+        background: {
+          scripts: ['background.js'],
+          persistent: false,
+        },
+        permissions: [
+          'https://api.example.com/*',
+        ],
+      };
+    }
+  },
+});
+```
+
+### Automatic MV2/MV3 Compatibility
+
+WXT automatically converts many manifest properties between MV2 and MV3:
+
+1. **Browser Actions**: `action` in MV3 is converted to `browser_action` in MV2
+2. **Web Accessible Resources**: The complex MV3 format is simplified for MV2
+3. **Background Scripts**: Appropriate format for each version
+4. **Permissions**: Host permissions are moved automatically
+
+Write code in MV3 format, and WXT handles the conversion:
+
+```typescript
+// wxt.config.ts
+export default defineConfig({
+  manifest: {
+    // MV3 syntax for both MV2 and MV3 builds
+    action: {
+      default_popup: 'popup.html',
+    },
+    web_accessible_resources: [
+      {
+        resources: ['images/*'],
+        matches: ['*://*.example.com/*'],
+      },
+    ],
+  },
+});
+```
+
+## Feature Detection
+
+Use feature detection to support multiple API versions:
+
+```typescript
+// Using optional chaining for API feature detection
+browser.action?.setBadgeText({ text: '42' }) ||
+  browser.browserAction?.setBadgeText({ text: '42' });
+
+// Using nullish coalescing
+const setBadge = (text) => {
+  (browser.action ?? browser.browserAction)?.setBadgeText({ text });
+};
+
+// Function for compatible API access
+function getBrowserAction() {
+  if (browser.action) {
+    return browser.action;
+  }
+  return browser.browserAction;
+}
+
+// Use it
+const browserAction = getBrowserAction();
+browserAction.setBadgeText({ text: '42' });
+```
+
+## MV2 to MV3 Migration
+
+### Background Script Differences
+
+MV2 uses persistent background pages while MV3 uses non-persistent service workers:
+
+```typescript
+// MV2 and MV3 compatible background script
+export default defineBackground(({ manifestVersion }) => {
+  if (manifestVersion === 3) {
+    // MV3-specific setup
+    console.log('Running as a service worker in MV3');
+    
+    // Handle wakeup events explicitly
+    self.addEventListener('push', (event) => {
+      // Handle push events
+    });
+  } else {
+    // MV2-specific setup
+    console.log('Running as a background page in MV2');
+  }
+  
+  // Common initialization for both versions
+  browser.runtime.onInstalled.addListener(({ reason }) => {
+    if (reason === 'install') {
+      // First-time setup
+    }
+  });
+});
+```
+
+### Web Request API Changes
+
+MV3 replaces the blocking Web Request API with the Declarative Net Request API:
+
+```typescript
+export default defineBackground(({ manifestVersion }) => {
+  if (manifestVersion === 2) {
+    // MV2: Use blocking webRequest
+    browser.webRequest.onBeforeRequest.addListener(
+      (details) => {
+        // Block or redirect requests
+        return { cancel: true };
+      },
+      { urls: ['*://*.example.com/*'] },
+      ['blocking']
+    );
+  } else {
+    // MV3: Use declarativeNetRequest
+    browser.declarativeNetRequest.updateDynamicRules({
+      removeRuleIds: [1],
+      addRules: [{
+        id: 1,
+        priority: 1,
+        action: { type: 'block' },
+        condition: {
+          urlFilter: '||example.com',
+          resourceTypes: ['main_frame'],
+        },
+      }],
+    });
+  }
+});
+```
+
+## Browser-Specific Quirks
+
+### Firefox-Specific Features
+
+```typescript
+// Firefox-specific manifest properties
+export default defineConfig({
+  manifest: ({ browser }) => {
+    if (browser === 'firefox') {
+      return {
+        browser_specific_settings: {
+          gecko: {
+            id: 'my-extension@example.com',
+            strict_min_version: '89.0',
+          },
+          gecko_android: {
+            strict_min_version: '113.0',
+          },
+        },
+        // Firefox supports custom sidebar
+        sidebar_action: {
+          default_title: 'My Sidebar',
+          default_panel: 'sidebar.html',
+          default_icon: {
+            16: '/icon-16.png',
+            32: '/icon-32.png',
+          },
+        },
+      };
+    }
+    return {};
+  },
+});
+```
+
+### Safari-Specific Features
+
+```typescript
+// Safari-specific adaptations
+export default defineContentScript({
+  matches: ['<all_urls>'],
+  
+  main(ctx) {
+    if (import.meta.env.SAFARI) {
+      // Safari-specific workarounds
+      
+      // Example: Safari doesn't allow access to some APIs
+      // in content scripts, use injected script instead
+      injectScript('/safari-workaround.js');
+    }
+    
+    // Common code for all browsers
+  },
+});
+```
+
+### Chrome-Specific Features
+
+```typescript
+// Chrome-specific features
+export default defineBackground(({ browser }) => {
+  if (browser === 'chrome') {
+    // Only available in Chrome
+    browser.declarativeContent.onPageChanged.addRules([
+      {
+        conditions: [
+          new browser.declarativeContent.PageStateMatcher({
+            pageUrl: { hostEquals: 'example.com' },
+          }),
+        ],
+        actions: [new browser.declarativeContent.ShowAction()],
+      },
+    ]);
+  }
+});
+```
+
+## Testing Cross-Browser Compatibility
+
+To ensure your extension works on all target browsers:
+
+1. Build for each browser:
+   ```bash
+   pnpm wxt build -b chrome
+   pnpm wxt build -b firefox
+   pnpm wxt build -b safari
+   ```
+
+2. Test the extension in each browser:
+   ```bash
+   pnpm wxt -b chrome
+   pnpm wxt -b firefox
+   ```
+
+3. Use feature detection instead of browser detection:
+   ```typescript
+   // Good: feature detection
+   if (browser.action) {
+     // Use browser.action
+   }
+   
+   // Avoid: browser detection
+   if (import.meta.env.CHROME) {
+     // Chrome-specific code may break in future updates
+   }
+   ```
+
+## Best Practices
+
+1. **Use Feature Detection**: Check for API availability rather than assuming based on browser
+2. **Write MV3-Compatible Code**: Write code compatible with MV3, and let WXT handle MV2 compatibility
+3. **Test All Target Browsers**: Regularly test your extension in all target browsers
+4. **Use Common APIs First**: Prefer APIs that work across all browsers
+5. **Organize Browser-Specific Code**: Keep browser-specific code isolated and clearly marked
+6. **Leverage WXT's Auto-Conversion**: Let WXT handle manifest conversions between MV2 and MV3
+7. **Document Browser Compatibility**: Document any browser-specific features in your extension 

@@ -1,0 +1,248 @@
+---
+description: Working with extension APIs in WXT - browser APIs, extension APIs, and feature detection
+globs: 
+alwaysApply: false
+---
+# Extension APIs
+
+Browser extensions use special APIs to interact with the browser. WXT provides a unified way to access these APIs across different browsers and manifest versions.
+
+## The `browser` Object
+
+WXT provides a unified `browser` object that works across all browsers:
+
+```typescript
+import { browser } from 'wxt/browser';
+
+browser.runtime.sendMessage({ action: 'hello' });
+```
+
+With auto-imports enabled, you don't even need to import the `browser` object—it's available globally in your code.
+
+## How It Works
+
+The `browser` object is a simple export that uses the appropriate global for the current browser:
+
+```javascript
+export const browser = globalThis.browser?.runtime?.id
+  ? globalThis.browser  // Firefox uses browser.*
+  : globalThis.chrome;  // Chrome uses chrome.*
+```
+
+This means you can use the promise-style API for both MV2 and MV3, across all browsers.
+
+## Common Extension APIs
+
+Here are some commonly used extension APIs:
+
+### Storage API
+
+```typescript
+// Save data
+await browser.storage.local.set({ key: 'value' });
+
+// Retrieve data
+const result = await browser.storage.local.get('key');
+console.log(result.key); // 'value'
+
+// Listen for changes
+browser.storage.onChanged.addListener((changes, areaName) => {
+  console.log('Storage changed in', areaName);
+  console.log('Changes:', changes);
+});
+```
+
+### Messaging API
+
+Background script:
+```typescript
+// Listen for messages
+browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  console.log('Message received:', message);
+  console.log('From:', sender);
+  
+  // Respond synchronously
+  sendResponse({ received: true });
+  
+  // OR respond asynchronously (return true to keep the channel open)
+  setTimeout(() => sendResponse({ received: true }), 1000);
+  return true;
+});
+```
+
+Content script or popup:
+```typescript
+// Send a message
+const response = await browser.runtime.sendMessage({
+  action: 'getData',
+  params: { id: 123 }
+});
+console.log('Response:', response);
+```
+
+### Tabs API
+
+```typescript
+// Get current tab
+const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
+console.log('Current tab:', tab);
+
+// Create a new tab
+const newTab = await browser.tabs.create({ url: 'https://example.com' });
+
+// Update a tab
+await browser.tabs.update(tabId, { url: 'https://example.com/new-page' });
+
+// Listen for tab changes
+browser.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  if (changeInfo.status === 'complete') {
+    console.log('Tab fully loaded:', tab.url);
+  }
+});
+```
+
+### Notifications API
+
+```typescript
+await browser.notifications.create('notification-id', {
+  type: 'basic',
+  title: 'Notification Title',
+  message: 'This is the notification message',
+  iconUrl: '/icons/notification-icon.png'
+});
+
+browser.notifications.onClicked.addListener((notificationId) => {
+  console.log('Notification clicked:', notificationId);
+});
+```
+
+### Context Menus
+
+```typescript
+browser.contextMenus.create({
+  id: 'my-menu-item',
+  title: 'My Context Menu Item',
+  contexts: ['selection', 'link'],
+});
+
+browser.contextMenus.onClicked.addListener((info, tab) => {
+  if (info.menuItemId === 'my-menu-item') {
+    console.log('Selected text:', info.selectionText);
+  }
+});
+```
+
+### Executing Scripts
+
+```typescript
+const results = await browser.scripting.executeScript({
+  target: { tabId: tab.id },
+  func: () => {
+    // This function runs in the target tab's context
+    return document.title;
+  }
+});
+
+console.log('Page title:', results[0].result);
+```
+
+## Accessing API Types
+
+WXT provides types for all extension APIs through the `Browser` namespace:
+
+```typescript
+import { type Browser } from 'wxt/browser';
+
+function handleMessage(
+  message: any, 
+  sender: Browser.Runtime.MessageSender
+) {
+  // Type-safe code with autocompletion
+}
+
+// Define a storage schema
+interface MyStorage {
+  user: {
+    name: string;
+    preferences: {
+      theme: 'light' | 'dark';
+    };
+  };
+}
+
+// Use the type with storage
+const storage = browser.storage.local as Browser.Storage.LocalStorageArea<MyStorage>;
+const data = await storage.get('user');
+console.log(data.user.preferences.theme); // Type-safe access
+```
+
+## Using webextension-polyfill (Optional)
+
+For more complete Promise compatibility, you can use the Mozilla's webextension-polyfill package:
+
+```bash
+pnpm add -D @wxt-dev/webextension-polyfill
+```
+
+Then update your `wxt.config.ts`:
+
+```typescript
+export default defineConfig({
+  imports: {
+    imports: [
+      // Make it auto-imported if you're using auto-imports
+      { from: '@wxt-dev/webextension-polyfill', name: 'browser' }
+    ]
+  }
+});
+```
+
+Or import it explicitly:
+
+```typescript
+import { browser } from '@wxt-dev/webextension-polyfill';
+```
+
+## Feature Detection
+
+Extension APIs vary between browsers and manifest versions. If an API isn't available, it will be `undefined`. Use feature detection to handle these cases:
+
+```typescript
+// Check if an API exists before using it
+if (browser.action) {
+  // MV3 action API exists
+  browser.action.setBadgeText({ text: '42' });
+} else if (browser.browserAction) {
+  // MV2 browserAction API exists
+  browser.browserAction.setBadgeText({ text: '42' });
+}
+
+// Use optional chaining for more concise code
+browser.action?.setBadgeText({ text: '42' }) ||
+  browser.browserAction?.setBadgeText({ text: '42' });
+
+// Or use nullish coalescing to access similar APIs
+(browser.action ?? browser.browserAction)?.setBadgeText({ text: '42' });
+```
+
+WARNING: Types will not catch these issues. TypeScript assumes all APIs exist, so you must handle missing APIs at runtime.
+
+## Best Practices
+
+1. **Use feature detection**: Always check if an API exists before using it
+2. **Use optional chaining**: Write concise code that checks for API existence
+3. **Handle MV2/MV3 differences**: Account for API differences between manifest versions
+4. **Use the `browser` namespace**: For consistent code across browsers
+5. **Add appropriate permissions**: Ensure your manifest includes all required permissions
+
+## Common API Differences
+
+- **MV3 vs MV2**: 
+  - `browser.action` (MV3) vs `browser.browserAction` (MV2)
+  - Service worker (MV3) vs background page (MV2)
+  - Declarative Net Request (MV3) vs Web Request (MV2)
+
+- **Chrome vs Firefox**:
+  - Promise support: Natively in Firefox, polyfilled in Chrome
+  - Some Firefox-specific APIs like `browser.experiments.*`
+  - Some Chrome-specific APIs like `chrome.declarativeNetRequest.*` 

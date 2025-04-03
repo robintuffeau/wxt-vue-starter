@@ -1,0 +1,578 @@
+---
+description: Storage, messaging, i18n, and scripting in WXT - communicating between extension components
+globs: 
+alwaysApply: false
+---
+# Storage, Messaging, and Communication
+
+Browser extensions often need to store data, communicate between different parts, and interact with extension users. WXT provides utilities and patterns to streamline these common tasks.
+
+## Storage API
+
+The browser's storage API lets you store and retrieve data persistently.
+
+### Basic Storage Operations
+
+```typescript
+// Save data
+await browser.storage.local.set({ key: 'value' });
+
+// Retrieve data
+const result = await browser.storage.local.get('key');
+console.log(result.key); // 'value'
+
+// Remove data
+await browser.storage.local.remove('key');
+
+// Clear all data
+await browser.storage.local.clear();
+```
+
+### Storage Areas
+
+Extensions have multiple storage areas:
+
+1. **Local Storage**: Persists between browser sessions
+   ```typescript
+   // Up to 5MB of data
+   browser.storage.local
+   ```
+
+2. **Sync Storage**: Syncs across the user's devices
+   ```typescript
+   // Up to 100KB of data
+   browser.storage.sync
+   ```
+
+3. **Session Storage**: Only persists for the current browser session
+   ```typescript
+   // Up to 10MB of data (MV3 only)
+   browser.storage.session
+   ```
+
+### TypeScript for Storage
+
+Use TypeScript to define storage schemas:
+
+```typescript
+// types/storage.ts
+export interface ExtensionStorage {
+  user: {
+    id: string;
+    name: string;
+    preferences: {
+      theme: 'light' | 'dark';
+      notifications: boolean;
+    };
+  };
+  
+  stats: {
+    pagesProcessed: number;
+    lastRun: number;
+  };
+}
+
+// Safe typed access to storage
+import { type Browser } from 'wxt/browser';
+import { type ExtensionStorage } from '~/types/storage';
+
+// Create typed storage reference
+const storage = browser.storage.local as Browser.Storage.LocalStorageArea<ExtensionStorage>;
+
+// Typed get request
+const { user } = await storage.get('user');
+console.log(user.preferences.theme); // Type-safe access
+
+// Typed set request
+await storage.set({
+  stats: {
+    pagesProcessed: 42,
+    lastRun: Date.now(),
+  },
+});
+```
+
+### Storage Event Listeners
+
+Listen for storage changes:
+
+```typescript
+browser.storage.onChanged.addListener((changes, areaName) => {
+  console.log(`Changes in ${areaName} storage:`);
+  for (const [key, { oldValue, newValue }] of Object.entries(changes)) {
+    console.log(`- ${key}: ${JSON.stringify(oldValue)} → ${JSON.stringify(newValue)}`);
+  }
+});
+```
+
+### Storage Utility Module
+
+Create a clean storage API:
+
+```typescript
+// utils/storage.ts
+import { type ExtensionStorage } from '~/types/storage';
+
+// Default values for storage keys
+const defaults: ExtensionStorage = {
+  user: {
+    id: '',
+    name: '',
+    preferences: {
+      theme: 'light',
+      notifications: true,
+    },
+  },
+  stats: {
+    pagesProcessed: 0,
+    lastRun: 0,
+  },
+};
+
+// Storage utility class
+export const storage = {
+  // Get a value with default fallback
+  async get<K extends keyof ExtensionStorage>(key: K): Promise<ExtensionStorage[K]> {
+    const result = await browser.storage.local.get(key);
+    return result[key] ?? defaults[key];
+  },
+  
+  // Set a value
+  async set<K extends keyof ExtensionStorage>(key: K, value: ExtensionStorage[K]): Promise<void> {
+    await browser.storage.local.set({ [key]: value });
+  },
+  
+  // Update a value partially
+  async update<K extends keyof ExtensionStorage>(
+    key: K,
+    updates: Partial<ExtensionStorage[K]>
+  ): Promise<void> {
+    const current = await this.get(key);
+    await this.set(key, { ...current, ...updates });
+  },
+  
+  // Clear a specific key
+  async clear(key: keyof ExtensionStorage): Promise<void> {
+    await browser.storage.local.remove(key);
+  },
+  
+  // Watch for changes to a specific key
+  watch<K extends keyof ExtensionStorage>(
+    key: K,
+    callback: (newValue: ExtensionStorage[K], oldValue?: ExtensionStorage[K]) => void
+  ): void {
+    browser.storage.onChanged.addListener((changes, area) => {
+      if (area === 'local' && key in changes) {
+        callback(changes[key].newValue, changes[key].oldValue);
+      }
+    });
+  },
+};
+```
+
+## Messaging
+
+Messaging allows different parts of your extension to communicate with each other.
+
+### One-time Messages
+
+Send and receive one-time messages:
+
+```typescript
+// Send a message from anywhere to the background script
+const response = await browser.runtime.sendMessage({
+  action: 'getData',
+  params: { id: 123 },
+});
+
+// Listen for messages in background script
+browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  console.log('Message received:', message);
+  console.log('From:', sender);
+  
+  if (message.action === 'getData') {
+    // Respond synchronously
+    sendResponse({ success: true, data: { id: message.params.id, name: 'Example' } });
+    
+    // OR respond asynchronously (return true to keep the channel open)
+    setTimeout(() => {
+      sendResponse({ success: true, data: { id: message.params.id, name: 'Example' } });
+    }, 1000);
+    return true;
+  }
+});
+```
+
+### Tab-specific Messages
+
+Send messages to specific tabs:
+
+```typescript
+// Get all tabs
+const tabs = await browser.tabs.query({});
+
+// Send message to a specific tab
+await browser.tabs.sendMessage(tabs[0].id!, {
+  action: 'highlightText',
+  params: { query: 'example' },
+});
+
+// In content script - listen for messages
+browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.action === 'highlightText') {
+    // Highlight text on the page
+    highlightText(message.params.query);
+    
+    // Send a response
+    sendResponse({ success: true });
+  }
+});
+```
+
+### Message Ports for Long-lived Connections
+
+For continuous communication, use connection-based messaging:
+
+```typescript
+// In background script
+browser.runtime.onConnect.addListener((port) => {
+  console.log('Connection established with', port.name);
+  
+  port.onMessage.addListener((message) => {
+    console.log('Message received on port:', message);
+    
+    // Send a response on the same port
+    port.postMessage({ response: 'Received your message' });
+  });
+  
+  port.onDisconnect.addListener(() => {
+    console.log('Port disconnected:', port.name);
+  });
+});
+
+// In content script or popup - connect to background
+const port = browser.runtime.connect({ name: 'data-stream' });
+
+port.onMessage.addListener((message) => {
+  console.log('Received message from background:', message);
+});
+
+// Send a message over the connection
+port.postMessage({ action: 'subscribe', data: 'updates' });
+
+// Later, disconnect when done
+// port.disconnect();
+```
+
+### Type-safe Messaging
+
+Create a type-safe messaging system:
+
+```typescript
+// types/messages.ts
+export type MessageAction = 
+  | 'getData'
+  | 'saveData'
+  | 'deleteData'
+  | 'refreshUI';
+
+export interface Message<T = any> {
+  action: MessageAction;
+  payload?: T;
+}
+
+export type ResponseData<T = any> = {
+  success: boolean;
+  data?: T;
+  error?: string;
+};
+
+// utils/messaging.ts
+import { type Message, type ResponseData } from '~/types/messages';
+
+export const messaging = {
+  // Send a typed message
+  async send<T = any, R = any>(message: Message<T>): Promise<ResponseData<R>> {
+    try {
+      const response = await browser.runtime.sendMessage(message);
+      return response || { success: false, error: 'No response' };
+    } catch (error) {
+      console.error('Error sending message:', error);
+      return { success: false, error: String(error) };
+    }
+  },
+  
+  // Send to a specific tab
+  async sendToTab<T = any, R = any>(tabId: number, message: Message<T>): Promise<ResponseData<R>> {
+    try {
+      const response = await browser.tabs.sendMessage(tabId, message);
+      return response || { success: false, error: 'No response' };
+    } catch (error) {
+      console.error(`Error sending message to tab ${tabId}:`, error);
+      return { success: false, error: String(error) };
+    }
+  },
+  
+  // Add a handler for incoming messages
+  addHandler<T = any, R = any>(
+    action: Message<T>['action'],
+    handler: (message: Message<T>, sender: Browser.Runtime.MessageSender) => Promise<ResponseData<R>> | ResponseData<R>
+  ): void {
+    browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
+      if (message.action === action) {
+        try {
+          const result = handler(message, sender);
+          if (result instanceof Promise) {
+            result.then(sendResponse);
+            return true; // Keep the channel open
+          } else {
+            sendResponse(result);
+          }
+        } catch (error) {
+          sendResponse({ success: false, error: String(error) });
+        }
+      }
+    });
+  },
+};
+```
+
+## Internationalization (i18n)
+
+Browser extensions support multiple languages through the i18n API.
+
+### Basic i18n Setup
+
+1. Add `default_locale` to your manifest:
+
+```typescript
+// wxt.config.ts
+export default defineConfig({
+  manifest: {
+    default_locale: 'en',
+  },
+});
+```
+
+2. Create locale message files:
+
+```json
+// public/_locales/en/messages.json
+{
+  "appName": {
+    "message": "My Extension",
+    "description": "The name of the extension"
+  },
+  "appDescription": {
+    "message": "A powerful browser extension",
+    "description": "The description of the extension"
+  },
+  "welcomeMessage": {
+    "message": "Welcome, $USER$!",
+    "description": "Greeting the user by name",
+    "placeholders": {
+      "user": {
+        "content": "$1",
+        "example": "John"
+      }
+    }
+  }
+}
+```
+
+```json
+// public/_locales/fr/messages.json
+{
+  "appName": {
+    "message": "Mon Extension"
+  },
+  "appDescription": {
+    "message": "Une extension de navigateur puissante"
+  },
+  "welcomeMessage": {
+    "message": "Bienvenue, $USER$!",
+    "placeholders": {
+      "user": {
+        "content": "$1"
+      }
+    }
+  }
+}
+```
+
+3. Use i18n in your manifest:
+
+```typescript
+// wxt.config.ts
+export default defineConfig({
+  manifest: {
+    name: '__MSG_appName__',
+    description: '__MSG_appDescription__',
+    default_locale: 'en',
+  },
+});
+```
+
+### Using i18n in Code
+
+```typescript
+// Get a localized string
+const message = browser.i18n.getMessage('welcomeMessage', ['Alice']);
+console.log(message); // "Welcome, Alice!" or "Bienvenue, Alice!"
+
+// Get current locale
+const locale = browser.i18n.getUILanguage();
+console.log('Current locale:', locale); // "en" or "fr"
+```
+
+### i18n Utility
+
+Create a utility for easier i18n usage:
+
+```typescript
+// utils/i18n.ts
+export const i18n = {
+  /**
+   * Get a localized message
+   * @param key The message key
+   * @param substitutions Values to substitute into the message
+   */
+  t(key: string, substitutions?: string | string[]): string {
+    return browser.i18n.getMessage(key, substitutions);
+  },
+  
+  /**
+   * Get current browser UI language
+   */
+  get locale(): string {
+    return browser.i18n.getUILanguage();
+  },
+  
+  /**
+   * Check if a specific locale is available
+   */
+  hasLocale(locale: string): boolean {
+    return browser.i18n.getAcceptLanguages().then(
+      languages => languages.includes(locale)
+    );
+  },
+  
+  /**
+   * Format a date using current locale
+   */
+  formatDate(date: Date, options?: Intl.DateTimeFormatOptions): string {
+    return date.toLocaleDateString(this.locale, options);
+  },
+  
+  /**
+   * Format a number using current locale
+   */
+  formatNumber(value: number, options?: Intl.NumberFormatOptions): string {
+    return value.toLocaleString(this.locale, options);
+  },
+};
+```
+
+## Scripting API
+
+The Scripting API allows you to inject JavaScript and CSS into pages.
+
+### Injecting Scripts Programmatically
+
+```typescript
+// Execute a script in a tab
+const results = await browser.scripting.executeScript({
+  target: { tabId: tab.id },
+  func: () => {
+    // This code runs in the target tab's context
+    return document.title;
+  },
+});
+
+console.log('Page title:', results[0].result);
+
+// Execute a script with arguments
+const searchResults = await browser.scripting.executeScript({
+  target: { tabId: tab.id },
+  args: ['searchTerm'],
+  func: (searchTerm) => {
+    // Use the passed argument
+    const elements = document.querySelectorAll(`*:contains("${searchTerm}")`);
+    return Array.from(elements).map(el => el.textContent);
+  },
+});
+```
+
+### Injecting CSS Programmatically
+
+```typescript
+// Inject CSS into a tab
+await browser.scripting.insertCSS({
+  target: { tabId: tab.id },
+  css: `
+    body {
+      background-color: #f5f5f5;
+    }
+    .highlight {
+      background-color: yellow;
+      font-weight: bold;
+    }
+  `,
+});
+
+// Later, remove the injected CSS
+await browser.scripting.removeCSS({
+  target: { tabId: tab.id },
+  css: '/* Same CSS string as above */',
+});
+```
+
+### Registering Content Scripts Dynamically
+
+```typescript
+// Register a content script dynamically
+await browser.scripting.registerContentScripts([
+  {
+    id: 'dynamic-content-script',
+    matches: ['*://*.example.com/*'],
+    js: ['/dynamic-script.js'],
+    css: ['/dynamic-style.css'],
+    runAt: 'document_idle',
+  },
+]);
+
+// Get list of registered scripts
+const scripts = await browser.scripting.getRegisteredContentScripts();
+console.log('Registered scripts:', scripts);
+
+// Unregister a script
+await browser.scripting.unregisterContentScripts({
+  ids: ['dynamic-content-script'],
+});
+```
+
+## Best Practices
+
+### Storage
+
+1. **Use namespaced keys**: Organize your storage with logical grouping
+2. **Define types**: Use TypeScript interfaces for your storage schema
+3. **Handle storage limits**: Stay within storage limits for each area
+4. **Provide defaults**: Always define default values for storage items
+5. **Use storage.watch**: Create watchers for reactive updates
+
+### Messaging
+
+1. **Define message types**: Create a clear contract for message shapes
+2. **Handle failures**: Always handle error cases in messaging
+3. **Use typed helpers**: Create type-safe message utilities
+4. **Avoid circular messages**: Be careful not to create infinite loops
+5. **Clean up connections**: Always disconnect long-lived connections when done
+
+### i18n
+
+1. **Use namespace keys**: Organize translations with prefixes (e.g., `popup.title`)
+2. **Add descriptions**: Include descriptions for translators
+3. **Avoid string concatenation**: Use placeholders instead
+4. **Test all locales**: Verify that your UI works in all supported languages
+5. **Default to English**: Always provide English as a fallback 

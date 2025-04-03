@@ -1,0 +1,240 @@
+---
+description: Publishing browser extensions with WXT - zipping, publishing to stores, and testing updates
+globs: 
+alwaysApply: false
+---
+# Publishing Extensions
+
+WXT simplifies the process of building, zipping, and publishing browser extensions to various extension stores.
+
+## Creating ZIP Files
+
+To create distribution ZIP files for your extension:
+
+```bash
+# For Chrome (default)
+pnpm wxt zip
+
+# For Firefox
+pnpm wxt zip -b firefox
+
+# For Edge
+pnpm wxt zip -b edge
+```
+
+The ZIP files will be created in the `.output/` directory with names like:
+- `{your-extension}-{version}-chrome.zip`
+- `{your-extension}-{version}-firefox.zip`
+- `{your-extension}-{version}-sources.zip` (Firefox source code)
+
+## First-Time Publishing
+
+For your first publication to extension stores, you'll need to manually navigate the submission process for each store. WXT can't help with creating initial listings, as each store has unique requirements.
+
+### Chrome Web Store
+
+1. Create a developer account on the [Chrome Web Store Developer Dashboard](mdc:https:/chrome.google.com/webstore/developer/dashboard)
+2. Create a new item
+3. Upload your ZIP file (created with `wxt zip`)
+4. Fill in all required information (description, screenshots, etc.)
+5. Pay the one-time developer fee if you haven't yet
+6. Submit for review
+
+### Firefox Add-on Store
+
+Firefox requires both the extension ZIP and a sources ZIP:
+
+1. Create a developer account on [Firefox Add-on Developer Hub](mdc:https:/addons.mozilla.org/developers)
+2. Create a new add-on
+3. Upload both ZIP files:
+   - Your extension ZIP (from `wxt zip -b firefox`)
+   - The sources ZIP (also generated automatically)
+4. Fill in all required information
+5. Submit for review
+
+### Edge Add-ons
+
+1. Register as a developer on [Microsoft Partner Center](mdc:https:/partner.microsoft.com/dashboard/registration)
+2. Create a new extension
+3. Upload your ZIP file (you can use the Chrome ZIP)
+4. Fill in all required information
+5. Submit for review
+
+## Automated Publishing
+
+For subsequent updates, WXT provides automation tools:
+
+### Setting Up Automation
+
+Run the setup wizard:
+
+```bash
+pnpm wxt submit init
+```
+
+Follow the prompts to set up automated publishing for each store. This will create a `.env.submit` file with your API keys and tokens.
+
+### Submitting Updates
+
+To submit updates to stores:
+
+```bash
+pnpm wxt submit \
+  --chrome-zip .output/*-chrome.zip \
+  --firefox-zip .output/*-firefox.zip --firefox-sources-zip .output/*-sources.zip \
+  --edge-zip .output/*-chrome.zip
+```
+
+You can test your configuration with a dry run:
+
+```bash
+pnpm wxt submit --dry-run \
+  --chrome-zip .output/*-chrome.zip \
+  --firefox-zip .output/*-firefox.zip --firefox-sources-zip .output/*-sources.zip
+```
+
+## Firefox Source Code Submission
+
+Firefox requires source code with each submission. When running `wxt zip -b firefox`, WXT automatically creates:
+
+1. The extension ZIP (`.output/*-firefox.zip`)
+2. A sources ZIP (`.output/*-sources.zip`)
+
+To customize which files are included in the sources ZIP:
+
+```typescript
+// wxt.config.ts
+export default defineConfig({
+  zip: {
+    // Files/directories to include in sources ZIP
+    includeSources: [
+      '.env.example',
+      'README.md',
+      'SOURCE_CODE_REVIEW.md',
+    ],
+    // Files/directories to exclude from sources ZIP
+    excludeSources: [
+      'node_modules',
+      '.git',
+      'tests',
+    ],
+    // Download private packages and include them in the ZIP
+    downloadPackages: [
+      '@mycompany/private-package',
+    ],
+  },
+});
+```
+
+Always test your sources ZIP to ensure Firefox can rebuild your extension:
+
+1. Extract the sources ZIP
+2. Run the commands in your README:
+   ```bash
+   pnpm install
+   pnpm build -b firefox
+   ```
+3. Verify the build output matches what you expect
+
+## GitHub Actions Integration
+
+You can automate the release process with GitHub Actions:
+
+```yaml
+# .github/workflows/release.yml
+name: Release
+
+on:
+  workflow_dispatch:
+  # Or trigger on version change
+  # push:
+  #   paths:
+  #     - 'package.json'
+
+jobs:
+  submit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: pnpm/action-setup@v4
+      
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'pnpm'
+      
+      - name: Install dependencies
+        run: pnpm install
+      
+      - name: Build extension ZIPs
+        run: |
+          pnpm zip
+          pnpm zip:firefox
+      
+      - name: Submit to stores
+        run: |
+          pnpm wxt submit \
+            --chrome-zip .output/*-chrome.zip \
+            --firefox-zip .output/*-firefox.zip --firefox-sources-zip .output/*-sources.zip
+        env:
+          CHROME_EXTENSION_ID: ${{ secrets.CHROME_EXTENSION_ID }}
+          CHROME_CLIENT_ID: ${{ secrets.CHROME_CLIENT_ID }}
+          CHROME_CLIENT_SECRET: ${{ secrets.CHROME_CLIENT_SECRET }}
+          CHROME_REFRESH_TOKEN: ${{ secrets.CHROME_REFRESH_TOKEN }}
+          FIREFOX_EXTENSION_ID: ${{ secrets.FIREFOX_EXTENSION_ID }}
+          FIREFOX_JWT_ISSUER: ${{ secrets.FIREFOX_JWT_ISSUER }}
+          FIREFOX_JWT_SECRET: ${{ secrets.FIREFOX_JWT_SECRET }}
+```
+
+## Testing Updates
+
+### Testing Permission Changes
+
+When permissions change between versions, browsers may disable your extension until users accept the new permissions:
+
+- **Chrome**: Use [Google's Extension Update Testing Tool](mdc:https:/github.com/GoogleChromeLabs/extension-update-testing-tool)
+- **Firefox**: Follow their [Test Permission Requests](mdc:https:/extensionworkshop.com/documentation/develop/test-permission-requests) guide
+
+### Testing the Update Event
+
+To run code when your extension updates:
+
+```typescript
+browser.runtime.onInstalled.addListener(({ reason }) => {
+  if (reason === 'update') {
+    // Code to run after update
+    showChangelog();
+  }
+});
+```
+
+To test this during development:
+1. Remove the `if` statement temporarily
+2. Reload the extension in developer mode
+3. Your update code will run on each reload
+
+## Safari Publishing
+
+WXT does not yet support automated publishing for Safari. Since Safari extensions require a native MacOS or iOS app wrapper, you'll need to use Xcode:
+
+1. Build your extension for Safari:
+   ```bash
+   pnpm wxt build -b safari
+   ```
+
+2. Convert it to a Safari extension using Xcode's tool:
+   ```bash
+   xcrun safari-web-extension-converter .output/safari-mv2
+   ```
+
+3. Follow Apple's documentation to complete the process
+
+## Best Practices
+
+1. **Automate version updates**: Use tools like `standard-version` or GitHub Actions to bump versions
+2. **Create a changelog**: Maintain a CHANGELOG.md file for users and store reviewers
+3. **Test thoroughly before submission**: Platforms may take days to approve updates
+4. **Use GitHub releases**: Create GitHub releases with your ZIPs for self-hosting
+5. **Track API changes**: Be aware of upcoming browser API deprecations
+6. **Test browser compatibility**: Verify your extension works on all target browsers 

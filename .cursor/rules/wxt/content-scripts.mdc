@@ -1,0 +1,370 @@
+---
+description: Working with content scripts in WXT - context, CSS, UI, and integration patterns
+globs: 
+alwaysApply: false
+---
+# Content Scripts
+
+Content scripts run in the context of web pages and are a core part of many browser extensions. WXT provides powerful tools for creating, managing, and integrating content scripts.
+
+## Creating Content Scripts
+
+Create content scripts in the `entrypoints/` directory:
+
+```typescript
+// entrypoints/example.content.ts
+export default defineContentScript({
+  matches: ['*://*.example.com/*'],
+  runAt: 'document_end',
+  
+  main(ctx) {
+    console.log('Content script loaded on', window.location.href);
+  },
+});
+```
+
+Or use a directory for more complex scripts:
+
+```
+📂 entrypoints/
+   📂 youtube.content/
+      📄 index.ts       ← Main entry point
+      📄 player.ts      ← Module for player-related code
+      📄 comments.ts    ← Module for comments-related code
+      📄 style.css      ← Styles for this content script
+```
+
+## Content Script Context
+
+The `ctx` parameter provided to your content script's `main` function offers essential utilities for handling the content script lifecycle:
+
+```typescript
+export default defineContentScript({
+  matches: ['*://*.example.com/*'],
+  
+  main(ctx) {
+    // Check if context is still valid
+    if (ctx.isInvalid) return;
+    
+    // Add safe event listeners that are automatically
+    // removed if the extension is uninstalled/updated
+    ctx.addEventListener(document, 'click', handleClick);
+    
+    // Safe timer functions
+    const timerId = ctx.setTimeout(() => {
+      console.log('Safe timeout that won\'t cause errors if extension is removed');
+    }, 1000);
+    
+    // You can also clear timers
+    ctx.clearTimeout(timerId);
+    
+    // Safe interval
+    const intervalId = ctx.setInterval(checkForChanges, 2000);
+    
+    // Safe requestAnimationFrame
+    ctx.requestAnimationFrame(animate);
+  },
+});
+```
+
+## CSS in Content Scripts
+
+### Importing CSS Files
+
+Import CSS directly in your content script:
+
+```typescript
+// entrypoints/example.content.ts
+import './style.css';
+
+export default defineContentScript({
+  matches: ['*://*.example.com/*'],
+  cssInjectionMode: 'ui', // 'manifest' | 'manual' | 'ui'
+  
+  main(ctx) {
+    // Your content script code
+  },
+});
+```
+
+### CSS Injection Modes
+
+WXT offers three CSS injection modes:
+
+1. `manifest` (default): CSS is added to the manifest's `content_scripts[].css` array
+2. `manual`: You manually inject the CSS using the content script
+3. `ui`: CSS is injected into a ShadowRoot created by the `createShadowRootUi` function
+
+### Standalone CSS Content Scripts
+
+You can create content scripts that only inject CSS:
+
+```css
+/* entrypoints/example.content.css */
+.my-extension-class {
+  color: red;
+  background: #f5f5f5;
+}
+```
+
+Then add it to the manifest via a hook:
+
+```typescript
+// wxt.config.ts
+export default defineConfig({
+  hooks: {
+    'build:manifestGenerated': (wxt, manifest) => {
+      manifest.content_scripts ??= [];
+      manifest.content_scripts.push({
+        css: ['content-scripts/example.css'],
+        matches: ['*://*.example.com/*'],
+      });
+    },
+  },
+});
+```
+
+## Adding UI to Web Pages
+
+WXT provides three ways to add UIs to web pages:
+
+| Method | Isolated Styles | Isolated Events | HMR | Use page's context |
+|--------|----------------|-----------------|-----|-------------------|
+| Integrated | ❌ | ❌ | ❌ | ✅ |
+| Shadow Root | ✅ | ✅ (optional) | ❌ | ✅ |
+| IFrame | ✅ | ✅ | ✅ | ❌ |
+
+### Integrated UI
+
+Simple but affected by page CSS:
+
+```typescript
+export default defineContentScript({
+  matches: ['<all_urls>'],
+  
+  main(ctx) {
+    const ui = createIntegratedUi(ctx, {
+      position: 'inline', // 'inline' | 'fixed' | 'absolute'
+      anchor: 'body',     // CSS selector or DOM element
+      onMount: (container) => {
+        // Append your UI elements
+        const app = document.createElement('div');
+        app.textContent = 'Hello from extension!';
+        container.append(app);
+      },
+    });
+    
+    // Show the UI
+    ui.mount();
+    
+    // Remove the UI
+    // ui.remove();
+  },
+});
+```
+
+### Shadow Root UI (Recommended)
+
+Provides style isolation:
+
+```typescript
+// Import your styles
+import './styles.css';
+
+export default defineContentScript({
+  matches: ['<all_urls>'],
+  cssInjectionMode: 'ui', // Important for Shadow DOM!
+  
+  async main(ctx) {
+    const ui = await createShadowRootUi(ctx, {
+      name: 'my-extension-ui',
+      position: 'fixed',
+      anchor: 'body',
+      isolateEvents: true, // Optional event isolation
+      onMount(container) {
+        // container is inside Shadow DOM
+        const app = document.createElement('div');
+        app.className = 'extension-app'; // Styled by imported CSS
+        app.textContent = 'Hello from Shadow DOM!';
+        container.append(app);
+      },
+    });
+    
+    ui.mount();
+  },
+});
+```
+
+### IFrame UI
+
+Complete isolation with HMR support:
+
+1. Create an HTML page for the iframe:
+
+```html
+<!-- entrypoints/example-iframe.html -->
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <title>IFrame UI</title>
+  <style>
+    body { margin: 0; }
+  </style>
+</head>
+<body>
+  <div id="app">Hello from IFrame!</div>
+  <script src="./iframe-ui.ts" type="module"></script>
+</body>
+</html>
+```
+
+2. Add to web_accessible_resources:
+
+```typescript
+// wxt.config.ts
+export default defineConfig({
+  manifest: {
+    web_accessible_resources: [
+      {
+        resources: ['example-iframe.html'],
+        matches: ['<all_urls>'],
+      },
+    ],
+  },
+});
+```
+
+3. Create and use the iframe:
+
+```typescript
+export default defineContentScript({
+  matches: ['<all_urls>'],
+  
+  main(ctx) {
+    const ui = createIframeUi(ctx, {
+      page: '/example-iframe.html',
+      position: 'fixed',
+      anchor: 'body',
+      onMount: (wrapper, iframe) => {
+        iframe.style.width = '300px';
+        iframe.style.height = '200px';
+        iframe.style.border = 'none';
+      },
+    });
+    
+    ui.mount();
+  },
+});
+```
+
+## Dynamic UI Mounting
+
+For SPAs and dynamic pages, use the `autoMount` API:
+
+```typescript
+export default defineContentScript({
+  matches: ['<all_urls>'],
+  
+  main(ctx) {
+    const ui = createIntegratedUi(ctx, {
+      position: 'inline',
+      anchor: '#dynamic-element-that-appears-later',
+      onMount: (container) => {
+        const app = document.createElement('p');
+        app.textContent = 'Mounted when element appears';
+        container.append(app);
+      },
+    });
+    
+    // Automatically mount/unmount when target element appears/disappears
+    ui.autoMount();
+  },
+});
+```
+
+## Isolated vs Main World
+
+Content scripts run in an "isolated world" by default, sharing only the DOM with the page. For direct access to page variables:
+
+### Option 1: MV3 World Option (Chrome only)
+
+```typescript
+export default defineContentScript({
+  world: 'MAIN', // Only works in Chromium MV3
+  
+  main() {
+    // Direct access to page's variables
+    console.log(window.somePageVariable);
+  },
+});
+```
+
+### Option 2: Script Injection (Recommended, works everywhere)
+
+Create two files:
+
+```typescript
+// entrypoints/injected-script.ts
+export default defineUnlistedScript(() => {
+  // Runs in the page's context (main world)
+  console.log('Page variables:', window.somePageVariable);
+  
+  // Return data back to the content script
+  return { pageData: window.somePageVariable };
+});
+```
+
+```typescript
+// entrypoints/page.content.ts
+export default defineContentScript({
+  matches: ['<all_urls>'],
+  
+  async main() {
+    // Add script to web_accessible_resources in wxt.config.ts
+    const result = await injectScript('/injected-script.js');
+    console.log('Got data from main world:', result);
+  },
+});
+```
+
+## Handling SPA Navigation
+
+For SPAs that don't trigger page reloads on navigation:
+
+```typescript
+// Use MatchPattern to check URLs
+const watchPattern = new MatchPattern('*://*.youtube.com/watch*');
+
+export default defineContentScript({
+  matches: ['*://*.youtube.com/*'], // Broader match
+  
+  main(ctx) {
+    // Listen for navigation events
+    ctx.addEventListener(window, 'wxt:locationchange', ({ newUrl }) => {
+      // Run code only when matching specific paths
+      if (watchPattern.includes(newUrl)) {
+        handleWatchPage(ctx);
+      }
+    });
+    
+    // Initial check
+    if (watchPattern.includes(location.href)) {
+      handleWatchPage(ctx);
+    }
+  },
+});
+
+function handleWatchPage(ctx: ContentScriptContext) {
+  console.log('On YouTube watch page:', location.href);
+  // Page-specific logic
+}
+```
+
+## Best Practices
+
+1. **Use Context Utilities**: Always use `ctx` utilities for event listeners, timers, etc.
+2. **Prefer Shadow DOM**: Use `createShadowRootUi` with `cssInjectionMode: 'ui'` for reliable style isolation
+3. **Handle SPAs**: Listen for `wxt:locationchange` to detect SPA navigation
+4. **Module Organization**: Split complex content scripts into multiple files
+5. **Component-based UI**: Use React, Vue, or other frameworks to build complex UIs 

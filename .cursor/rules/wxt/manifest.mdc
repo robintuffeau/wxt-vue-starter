@@ -1,0 +1,310 @@
+---
+description: Understanding WXT's manifest generation - options, permissions, icons, and more
+globs: 
+alwaysApply: false
+---
+# Manifest Configuration
+
+Unlike traditional web extensions where you manually create a `manifest.json` file, WXT automatically generates it from multiple sources:
+
+- Global options in your `wxt.config.ts` file
+- Entrypoint-specific options defined in your entrypoint files
+- WXT Modules that may modify your manifest
+- Hooks defined in your project
+
+## Global Manifest Options
+
+Define global manifest properties in your `wxt.config.ts` file:
+
+```typescript
+// wxt.config.ts
+export default defineConfig({
+  manifest: {
+    name: 'My Extension',
+    description: 'A browser extension built with WXT',
+    permissions: ['storage', 'tabs'],
+    // Other manifest properties...
+  },
+});
+```
+
+You can also use a function to generate different manifests based on the target:
+
+```typescript
+// wxt.config.ts
+export default defineConfig({
+  manifest: ({ browser, manifestVersion, mode, command }) => {
+    return {
+      name: mode === 'development' ? 'My Extension (Dev)' : 'My Extension',
+      permissions: [
+        'storage',
+        // Add development-only permissions
+        ...(mode === 'development' ? ['tabs'] : []),
+      ],
+      // Browser-specific properties
+      ...(browser === 'firefox' ? {
+        browser_specific_settings: {
+          gecko: {
+            id: 'my-extension@example.com',
+          },
+        },
+      } : {}),
+    };
+  },
+});
+```
+
+## MV2 and MV3 Compatibility
+
+WXT provides seamless compatibility between Manifest V2 and V3. Define properties using MV3 syntax, and WXT will automatically convert them for MV2 builds:
+
+```typescript
+export default defineConfig({
+  manifest: {
+    // MV3 syntax - will be converted to browser_action for MV2
+    action: {
+      default_title: 'My Extension',
+    },
+    // MV3 syntax - will be converted to simpler array for MV2
+    web_accessible_resources: [
+      {
+        matches: ['*://*.example.com/*'],
+        resources: ['images/*.png'],
+      },
+    ],
+  },
+});
+```
+
+## Name and Version
+
+If not specified in your manifest config, the extension's `name` defaults to your `package.json`'s `name`, and the version information comes from your `package.json`'s `version`:
+
+```json
+// package.json
+{
+  "name": "my-extension",
+  "version": "1.3.0-beta.2"
+}
+```
+
+Results in:
+
+```json
+// manifest.json
+{
+  "name": "my-extension",
+  "version": "1.3.0",
+  "version_name": "1.3.0-beta.2"
+}
+```
+
+## Icons
+
+WXT automatically discovers icons from your `public/` directory:
+
+```
+public/
+├─ icon-16.png
+├─ icon-24.png
+├─ icon-48.png
+├─ icon-96.png
+└─ icon-128.png
+```
+
+Recognized file patterns include:
+- `icon-{size}.png` (e.g., `icon-16.png`)
+- `icon-{size}x{size}.png` (e.g., `icon-16x16.png`)
+- `icon@{size}w.png` or `icon@{size}h.png` (e.g., `icon@16w.png`)
+- `icon/{size}.png` or `icons/{size}.png` (e.g., `icon/16.png`)
+
+To specify custom icon paths:
+
+```typescript
+export default defineConfig({
+  manifest: {
+    icons: {
+      16: '/custom-icon-16.png',
+      48: '/custom-icon-48.png',
+      128: '/custom-icon-128.png',
+    },
+  },
+});
+```
+
+You can also use the `@wxt-dev/auto-icons` module to generate icons from a single image.
+
+## Permissions
+
+Unlike entrypoints, permissions aren't automatically detected. You need to explicitly add them:
+
+```typescript
+export default defineConfig({
+  manifest: {
+    permissions: [
+      'storage',       // Access to the storage API
+      'tabs',          // Access to the tabs API
+      'activeTab',     // Access to the active tab
+      'notifications', // Permission to show notifications
+    ],
+    // For MV3, host permissions should be separate
+    host_permissions: [
+      'https://*.example.com/*',
+    ],
+  },
+});
+```
+
+Only certain permissions are added automatically:
+- During development: `tabs` and `scripting` for hot reloading
+- When a `sidepanel` entrypoint exists: the `sidePanel` permission
+
+## Host Permissions
+
+For cross-origin requests, you need to specify host permissions:
+
+```typescript
+export default defineConfig({
+  manifest: {
+    host_permissions: ['https://api.example.com/*'],
+  },
+});
+```
+
+For projects targeting both MV2 and MV3, ensure the permissions are correctly configured for each:
+
+```typescript
+export default defineConfig({
+  manifest: ({ manifestVersion }) => ({
+    permissions: [
+      'storage',
+      // In MV2, host permissions go in the permissions array
+      ...(manifestVersion === 2 ? [
+        'https://api.example.com/*'
+      ] : []),
+    ],
+    // In MV3, host permissions have their own key
+    ...(manifestVersion === 3 ? {
+      host_permissions: [
+        'https://api.example.com/*'
+      ],
+    } : {}),
+  }),
+});
+```
+
+## Internationalization
+
+To enable i18n:
+
+1. Add the `default_locale` to your manifest:
+
+```typescript
+export default defineConfig({
+  manifest: {
+    name: '__MSG_extName__',
+    description: '__MSG_extDescription__',
+    default_locale: 'en',
+  },
+});
+```
+
+2. Create translation files in the `public/_locales/` directory:
+
+```json
+// public/_locales/en/messages.json
+{
+  "extName": {
+    "message": "My Extension"
+  },
+  "extDescription": {
+    "message": "An awesome extension built with WXT"
+  }
+}
+```
+
+## Browser Actions
+
+WXT streamlines adding popup UIs to your extension:
+
+1. Just create a [Popup entrypoint](mdc:https:/wxt.dev/guide/essentials/entrypoints.html#popup)
+2. WXT adds appropriate `action` (MV3) or `browser_action` (MV2) to your manifest
+
+To override the default behavior and use a `page_action` in MV2:
+
+```html
+<!-- entrypoints/popup/index.html -->
+<head>
+  <meta name="manifest.type" content="page_action" />
+</head>
+```
+
+For action without a popup (just an icon that triggers an event):
+
+```typescript
+export default defineConfig({
+  manifest: {
+    action: {},
+    // For MV2 page_action:
+    // page_action: {},
+  },
+});
+```
+
+## Content Security Policy
+
+For MV3, you can set a custom Content Security Policy:
+
+```typescript
+export default defineConfig({
+  manifest: {
+    content_security_policy: {
+      extension_pages: "script-src 'self'; object-src 'self'",
+      sandbox: "sandbox allow-scripts; script-src 'self'; object-src 'self'",
+    },
+  },
+});
+```
+
+For MV2:
+
+```typescript
+export default defineConfig({
+  manifest: {
+    content_security_policy: "script-src 'self'; object-src 'self'",
+  },
+});
+```
+
+## Web Accessible Resources
+
+To make resources accessible to web pages or content scripts:
+
+```typescript
+export default defineConfig({
+  manifest: {
+    web_accessible_resources: [
+      {
+        resources: ['images/*', 'fonts/*', 'injected-script.js'],
+        matches: ['*://*.example.com/*'],
+      },
+    ],
+  },
+});
+```
+
+For MV2, WXT automatically converts this to the older format:
+
+```json
+{
+  "web_accessible_resources": [
+    "images/*",
+    "fonts/*",
+    "injected-script.js"
+  ]
+}
+```
+
+## Inspecting Generated Manifest
+
+During development, your extension's manifest is output to `.output/{target}/manifest.json`. Review this file to ensure it contains all the properties you expect. 

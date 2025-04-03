@@ -1,0 +1,47 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# WXT Documentation
+
+WXT is a modern, open-source framework for building web extensions with:
+- An excellent developer experience (DX)
+- First-class support for all major browsers
+- Comprehensive tooling for development, testing, and publishing
+
+## How to Use This Documentation
+
+- For general questions about WXT: `@wxt-documentation`
+- For specific topics: `@wxt-documentation [topic]` 
+  Example: `@wxt-documentation content scripts`
+- For direct navigation to a section: 
+  - `@wxt/getting-started` - Introduction, installation and project structure
+  - `@wxt/entrypoints` - All entrypoint types and their configuration
+  - `@wxt/content-scripts` - Content script development and UI integration
+  - etc.
+
+## Available Sections
+
+@file:wxt/getting-started.mdc - Introduction, installation, and project structure
+@file:wxt/entrypoints.mdc - All entrypoint types and their configuration
+@file:wxt/manifest.mdc - Manifest generation, options, permissions, and icons
+@file:wxt/configuration.mdc - Browser startup, TypeScript, build modes, Vite, hooks
+@file:wxt/development.mdc - Auto-imports, environment variables, and runtime config
+@file:wxt/extension-apis.mdc - Browser APIs, extension APIs, and feature detection
+@file:wxt/content-scripts.mdc - Content script context, CSS, UI options, and worlds
+@file:wxt/ui-frameworks.mdc - Frontend frameworks, multiple apps, and router configuration
+@file:wxt/assets.mdc - Asset management, public directory, and WASM integration
+@file:wxt/cross-browser.mdc - Targeting different browsers and manifest versions
+@file:wxt/storage-messaging.mdc - Storage, messaging, i18n, and scripting
+@file:wxt/wxt-modules.mdc - WXT modules, hooks, creating and using modules
+@file:wxt/advanced.mdc - ES Modules, remote code, and other advanced features
+@file:wxt/testing.mdc - Unit testing with Vitest and E2E testing with Playwright
+@file:wxt/publishing.mdc - Publishing to stores, zipping, and testing updates
+
+## External Resources
+
+- Official website: https://wxt.dev
+- GitHub: https://github.com/wxt-dev/wxt
+- Examples: https://wxt.dev/examples.html
+- Community: https://wxt.dev/guide/resources/community.html

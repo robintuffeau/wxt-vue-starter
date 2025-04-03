@@ -1,0 +1,313 @@
+---
+description: WXT Modules - extending and customizing the build process with a powerful module system
+globs: 
+alwaysApply: false
+---
+# WXT Modules
+
+WXT provides a powerful module system that allows you to extend and customize the build process. Modules let you run code at different steps in the build process to modify the output, add features, or integrate with other tools.
+
+## Types of Modules
+
+There are two ways to add modules to your project:
+
+1. **NPM Modules**: Published packages designed to be used with WXT
+2. **Local Modules**: Custom modules created in your project's `modules/` directory
+
+## Adding NPM Modules
+
+To add a published WXT module:
+
+1. Install the module:
+   ```bash
+   pnpm add -D @wxt-dev/auto-icons
+   ```
+
+2. Add it to your `wxt.config.ts`:
+   ```typescript
+   export default defineConfig({
+     modules: ['@wxt-dev/auto-icons'],
+   });
+   ```
+
+Common WXT modules include:
+
+- [`@wxt-dev/auto-icons`](mdc:https:/www.npmjs.com/package/@wxt-dev/auto-icons): Automatically generate icons at different sizes from a single source image
+- [`@wxt-dev/i18n`](mdc:https:/www.npmjs.com/package/@wxt-dev/i18n): Enhanced internationalization support
+- Framework modules:
+  - [`@wxt-dev/module-vue`](mdc:https:/www.npmjs.com/package/@wxt-dev/module-vue)
+  - [`@wxt-dev/module-react`](mdc:https:/www.npmjs.com/package/@wxt-dev/module-react)
+  - [`@wxt-dev/module-svelte`](mdc:https:/www.npmjs.com/package/@wxt-dev/module-svelte)
+  - [`@wxt-dev/module-solid`](mdc:https:/www.npmjs.com/package/@wxt-dev/module-solid)
+
+## Creating Local Modules
+
+Local modules live in your project's `modules/` directory:
+
+```
+📂 {rootDir}/
+   📂 modules/
+      📄 my-module.ts
+      📄 another-module.ts
+```
+
+Here's a basic WXT module:
+
+```typescript
+// modules/my-module.ts
+import { defineWxtModule } from 'wxt/modules';
+
+export default defineWxtModule({
+  setup(wxt) {
+    // Your module code here
+    wxt.hook('build:manifestGenerated', (_, manifest) => {
+      // Modify the manifest
+      manifest.name += ' (Modified by module)';
+    });
+  },
+});
+```
+
+This module is automatically loaded by WXT.
+
+## Module Options
+
+Modules can accept options in two ways:
+
+### 1. Build-time Options
+
+Options defined in `wxt.config.ts` for configuration during the build process:
+
+```typescript
+// modules/my-module.ts
+import { defineWxtModule } from 'wxt/modules';
+import 'wxt';
+
+export interface MyModuleOptions {
+  enabled: boolean;
+  mode: 'simple' | 'advanced';
+}
+
+// Add type to WXT's config
+declare module 'wxt' {
+  export interface InlineConfig {
+    myModule: MyModuleOptions;
+  }
+}
+
+export default defineWxtModule<MyModuleOptions>({
+  configKey: 'myModule',
+  
+  setup(wxt, options) {
+    if (!options.enabled) return;
+    
+    // Use options.mode to control module behavior
+    console.log('Module options:', options);
+  },
+});
+```
+
+Then in your config:
+
+```typescript
+// wxt.config.ts
+export default defineConfig({
+  myModule: {
+    enabled: true,
+    mode: 'advanced',
+  },
+});
+```
+
+### 2. Runtime Options
+
+Options defined in `app.config.ts` for accessing at runtime:
+
+```typescript
+// modules/my-module.ts
+import { defineWxtModule } from 'wxt/modules';
+import 'wxt/utils/define-app-config';
+
+// Add type to app config
+declare module 'wxt/utils/define-app-config' {
+  export interface WxtAppConfig {
+    myModule: {
+      theme: 'light' | 'dark';
+    };
+  }
+}
+
+export default defineWxtModule({
+  setup(wxt) {
+    // Code that runs at build time
+  },
+});
+```
+
+Then in your app config:
+
+```typescript
+// app.config.ts
+export default defineAppConfig({
+  myModule: {
+    theme: 'dark',
+  },
+});
+```
+
+## Module Hooks
+
+Hooks are the primary way modules interact with the build process. You can hook into various stages:
+
+```typescript
+export default defineWxtModule({
+  setup(wxt) {
+    // Hook into config resolution
+    wxt.hook('config:resolved', () => {
+      wxt.config.outDir = 'dist';
+    });
+    
+    // Hook into manifest generation
+    wxt.hook('build:manifestGenerated', (_, manifest) => {
+      manifest.name += ' (Enhanced)';
+    });
+    
+    // Hook into entrypoint discovery
+    wxt.hook('entrypoints:found', (_, entrypoints) => {
+      // Add a custom entrypoint
+      entrypoints.push({
+        name: 'custom-script',
+        inputPath: 'path/to/script.js',
+        type: 'content-script',
+      });
+    });
+    
+    // Hook into asset generation
+    wxt.hook('build:publicAssets', (_, assets) => {
+      // Add a custom file to the output
+      assets.push({
+        relativeDest: 'generated-file.json',
+        contents: JSON.stringify({ generated: true }),
+      });
+    });
+  },
+});
+```
+
+## Module Execution Order
+
+Since hooks can be defined in multiple places, execution order matters:
+
+1. NPM modules in the order listed in the `modules` config
+2. Local modules in the `/modules` folder, loaded alphabetically
+3. Hooks defined directly in `wxt.config.ts`
+
+To control execution order of local modules, prefix filenames with numbers:
+
+```
+📂 modules/
+   📄 0.first-module.ts   // Runs first
+   📄 1.second-module.ts  // Runs second
+   📄 2.third-module.ts   // Runs third
+```
+
+To see execution order for your project, run:
+
+```bash
+wxt prepare --debug
+```
+
+And look for "Hook execution order" in the output.
+
+## Practical Module Examples
+
+### 1. Generate Output Files
+
+```typescript
+export default defineWxtModule({
+  setup(wxt) {
+    const generatedFilePath = 'data/config.json';
+    
+    wxt.hook('build:publicAssets', (_, assets) => {
+      assets.push({
+        relativeDest: generatedFilePath,
+        contents: JSON.stringify({
+          timestamp: Date.now(),
+          environment: wxt.config.mode,
+          browser: wxt.config.browser,
+        }),
+      });
+    });
+    
+    // Make file accessible to content scripts
+    wxt.hook('build:manifestGenerated', (_, manifest) => {
+      manifest.web_accessible_resources ??= [];
+      manifest.web_accessible_resources.push({
+        matches: ['<all_urls>'],
+        resources: [generatedFilePath],
+      });
+    });
+  },
+});
+```
+
+### 2. Generate Runtime Code
+
+Create a module that generates code at build time and makes it available at runtime:
+
+```typescript
+import { resolve } from 'node:path';
+
+export default defineWxtModule({
+  // Add auto-imports for the generated code
+  imports: [
+    { from: '#analytics', name: 'analytics' },
+    { from: '#analytics', name: 'trackEvent' },
+  ],
+  
+  setup(wxt) {
+    const analyticsModulePath = resolve(
+      wxt.config.wxtDir,
+      'analytics/index.ts'
+    );
+    
+    // Generate the module code
+    const analyticsModuleCode = `
+      import { createAnalytics } from 'some-module';
+      import { useAppConfig } from '#imports';
+      
+      export const analytics = createAnalytics({
+        appId: useAppConfig().analytics?.appId || 'default',
+        debug: useAppConfig().analytics?.debug || false,
+      });
+      
+      export const trackEvent = (name, data) => {
+        analytics.trackEvent(name, data);
+      };
+    `;
+    
+    // Add alias so #analytics can be imported
+    wxt.config.alias = {
+      ...wxt.config.alias,
+      '#analytics': analyticsModulePath,
+    };
+    
+    // Generate the file during prepare
+    wxt.hook('prepare:types', async (_, entries) => {
+      entries.push({
+        path: analyticsModulePath,
+        text: analyticsModuleCode,
+      });
+    });
+  },
+});
+```
+
+## Best Practices
+
+1. **Keep modules focused**: Each module should have a single responsibility
+2. **Provide clear configuration options**: Use TypeScript for type-safe options
+3. **Document your modules**: Include a README.md with usage examples
+4. **Be careful with hook order**: Use prefixed filenames to control execution order
+5. **Organize common functionality**: Extract reusable code into helper functions
+6. **Test your modules**: Create simple test projects to verify your module works correctly 

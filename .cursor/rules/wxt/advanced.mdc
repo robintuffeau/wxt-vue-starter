@@ -1,0 +1,459 @@
+---
+description: Advanced WXT features - ES Modules, remote code, and other advanced techniques
+globs: 
+alwaysApply: false
+---
+# Advanced Features
+
+WXT provides several advanced features for extending and customizing your browser extension. This section covers more complex techniques for power users.
+
+## ES Modules in Extensions
+
+Browser extensions have historically used CommonJS modules, but WXT offers full support for ES Modules (ESM), which provides better tree-shaking, code splitting, and modern JavaScript features.
+
+### ESM for Background Scripts
+
+In Manifest V3, you can use ESM for background scripts:
+
+```typescript
+// entrypoints/background.ts
+export default defineBackground({
+  type: 'module', // Enables ES Module support
+  main() {
+    // Your background script code
+  },
+});
+```
+
+This generates a manifest entry like:
+
+```json
+{
+  "background": {
+    "type": "module",
+    "service_worker": "background.js"
+  }
+}
+```
+
+### ESM with Import/Export
+
+With ESM, you can use dynamic imports and exports:
+
+```typescript
+// background.ts
+export default defineBackground({
+  type: 'module',
+  async main() {
+    // Import modules only when needed
+    const { processData } = await import('./data-processor.js');
+    
+    browser.runtime.onMessage.addListener(async (message) => {
+      if (message.action === 'processData') {
+        return processData(message.data);
+      }
+    });
+  },
+});
+```
+
+### Limitations of ESM
+
+Some limitations to be aware of:
+
+1. ESM background scripts are only supported in Manifest V3
+2. Firefox has limited ESM support in extensions
+3. Some older extension APIs may not work seamlessly with ESM
+
+## Remote Code Execution
+
+Browser extensions are typically self-contained, but sometimes you need to execute code from remote sources.
+
+### Remote Code Loading
+
+WXT provides safe ways to load remote code:
+
+```typescript
+// entrypoints/background.ts
+export default defineBackground({
+  async main() {
+    try {
+      // Load a remote module (requires appropriate permissions)
+      const remoteModule = await import('https://example.com/module.js');
+      
+      // Use the remote module
+      console.log('Remote module loaded:', remoteModule);
+    } catch (error) {
+      console.error('Failed to load remote module:', error);
+    }
+  },
+});
+```
+
+### Content Security Policy
+
+To allow remote code, configure the Content Security Policy (CSP):
+
+```typescript
+// wxt.config.ts
+export default defineConfig({
+  manifest: {
+    content_security_policy: {
+      extension_pages: "script-src 'self' https://example.com; object-src 'self'",
+    },
+  },
+});
+```
+
+### Self-Updating Extensions
+
+Create self-updating extensions by fetching new code:
+
+```typescript
+export default defineBackground({
+  async main() {
+    // Check for updates periodically
+    async function checkForUpdates() {
+      try {
+        const response = await fetch('https://your-api.com/extension-updates');
+        const { hasUpdate, newCode } = await response.json();
+        
+        if (hasUpdate) {
+          // Store new code in storage
+          await browser.storage.local.set({ updatedCode: newCode });
+          // Notify user about the update
+          browser.notifications.create({
+            type: 'basic',
+            title: 'Update Available',
+            message: 'New features are available. Restart the extension to apply.',
+            iconUrl: '/icons/icon-48.png',
+          });
+        }
+      } catch (error) {
+        console.error('Update check failed:', error);
+      }
+    }
+    
+    // Check for updates hourly
+    setInterval(checkForUpdates, 60 * 60 * 1000);
+    
+    // Initial check
+    checkForUpdates();
+    
+    // Load updated code if available
+    const { updatedCode } = await browser.storage.local.get('updatedCode');
+    if (updatedCode) {
+      try {
+        // Execute updated code using Function constructor
+        // Note: This requires appropriate CSP and is subject to browser security policies
+        const executeCode = new Function(updatedCode);
+        executeCode();
+      } catch (error) {
+        console.error('Failed to execute updated code:', error);
+      }
+    }
+  },
+});
+```
+
+> **Warning:** Self-updating extensions may violate extension store policies. Always check the policies of each browser store before implementing self-updates.
+
+## Advanced Manifest Generation
+
+WXT generates the manifest.json file automatically, but you can gain fine-grained control over the generation process.
+
+### Conditional Manifest Properties
+
+Create conditional manifest properties based on build parameters:
+
+```typescript
+// wxt.config.ts
+export default defineConfig({
+  manifest: ({ browser, manifestVersion, mode }) => {
+    // Base manifest
+    const manifest = {
+      name: 'My Extension',
+      description: 'A powerful browser extension',
+      permissions: ['storage'],
+    };
+    
+    // Development-only properties
+    if (mode === 'development') {
+      manifest.name += ' (Dev)';
+      manifest.permissions.push('tabs');
+    }
+    
+    // Browser-specific properties
+    if (browser === 'firefox') {
+      return {
+        ...manifest,
+        browser_specific_settings: {
+          gecko: {
+            id: 'my-extension@example.com',
+            strict_min_version: '89.0',
+          },
+        },
+      };
+    }
+    
+    // Manifest version-specific properties
+    if (manifestVersion === 2) {
+      return {
+        ...manifest,
+        browser_action: {
+          default_popup: 'popup.html',
+        },
+      };
+    } else {
+      return {
+        ...manifest,
+        action: {
+          default_popup: 'popup.html',
+        },
+      };
+    }
+  },
+});
+```
+
+### Using Environment Variables in Manifest
+
+Access environment variables in your manifest:
+
+```typescript
+// wxt.config.ts
+export default defineConfig({
+  manifest: () => ({
+    name: 'My Extension',
+    version: import.meta.env.WXT_VERSION || '1.0.0',
+    oauth2: {
+      client_id: import.meta.env.WXT_OAUTH_CLIENT_ID,
+      scopes: [
+        'https://www.googleapis.com/auth/userinfo.email',
+        'https://www.googleapis.com/auth/userinfo.profile',
+      ],
+    },
+  }),
+});
+```
+
+## Cross-Origin Resource Sharing (CORS)
+
+Extensions often need to access APIs from different origins. WXT provides ways to handle CORS.
+
+### Requesting Host Permissions
+
+To make cross-origin requests, request appropriate host permissions:
+
+```typescript
+// wxt.config.ts
+export default defineConfig({
+  manifest: {
+    permissions: ['storage'],
+    host_permissions: [
+      'https://api.example.com/*',
+      'https://*.googleapis.com/*',
+    ],
+  },
+});
+```
+
+### Using a Background Proxy
+
+Create a background script proxy to handle CORS requests:
+
+```typescript
+// entrypoints/background.ts
+export default defineBackground({
+  main() {
+    // Listen for API proxy requests
+    browser.runtime.onMessage.addListener(async (message, sender) => {
+      if (message.type === 'apiRequest') {
+        try {
+          const { url, method = 'GET', headers = {}, body } = message;
+          const response = await fetch(url, {
+            method,
+            headers,
+            body: body ? JSON.stringify(body) : undefined,
+          });
+          
+          const data = await response.json();
+          return { success: true, data };
+        } catch (error) {
+          console.error('API request failed:', error);
+          return { success: false, error: error.message };
+        }
+      }
+    });
+  },
+});
+```
+
+Then in your content script or popup:
+
+```typescript
+// Make API requests through the background proxy
+async function apiRequest(url, options = {}) {
+  const response = await browser.runtime.sendMessage({
+    type: 'apiRequest',
+    url,
+    ...options,
+  });
+  
+  if (!response.success) {
+    throw new Error(response.error);
+  }
+  
+  return response.data;
+}
+
+// Usage
+const userData = await apiRequest('https://api.example.com/user');
+```
+
+## Advanced Content Script Techniques
+
+### Injecting Scripts Into the Page Context
+
+Inject scripts directly into the page's context to access page variables:
+
+```typescript
+// entrypoints/page-script.ts
+export default defineUnlistedScript(() => {
+  // This runs in the page's context
+  window._extensionInstalled = true;
+  
+  // Access page variables
+  const pageData = {
+    title: document.title,
+    url: window.location.href,
+    userState: window.__USER_STATE,
+  };
+  
+  // Return data to the content script
+  return pageData;
+});
+```
+
+```typescript
+// entrypoints/example.content.ts
+export default defineContentScript({
+  matches: ['*://*.example.com/*'],
+  
+  async main() {
+    // Inject and execute the script
+    const pageData = await injectScript('/page-script.js');
+    console.log('Got page data:', pageData);
+    
+    // Communicate with the injected script
+    window.addEventListener('message', (event) => {
+      if (event.source === window && event.data.from === 'pageScript') {
+        console.log('Message from page script:', event.data);
+      }
+    });
+  },
+});
+```
+
+### Shadow DOM for Advanced UIs
+
+Create isolated UIs with advanced Shadow DOM options:
+
+```typescript
+export default defineContentScript({
+  matches: ['*://*.example.com/*'],
+  cssInjectionMode: 'ui',
+  
+  async main(ctx) {
+    const ui = await createShadowRootUi(ctx, {
+      name: 'advanced-ui',
+      position: 'fixed',
+      anchor: 'top-right',
+      
+      // Custom shadow root options
+      shadowRootInit: {
+        mode: 'open', // or 'closed'
+        delegatesFocus: true,
+        slotAssignment: 'manual',
+      },
+      
+      // Isolate events from the page
+      isolateEvents: true,
+      
+      // Custom z-index for overlay positioning
+      zIndex: 999999,
+      
+      onMount(container) {
+        // Create your UI
+      },
+    });
+    
+    ui.mount();
+  },
+});
+```
+
+## Performance Optimizations
+
+### Code Splitting
+
+Optimize your extension with code splitting:
+
+```typescript
+// wxt.config.ts
+export default defineConfig({
+  vite: {
+    build: {
+      rollupOptions: {
+        output: {
+          manualChunks: {
+            vendor: ['react', 'react-dom', 'lodash-es'],
+            utils: ['~/utils/index.ts'],
+          },
+        },
+      },
+    },
+  },
+});
+```
+
+### Worker Optimization
+
+For long-running background tasks in MV3, use web workers:
+
+```typescript
+// entrypoints/background.ts
+export default defineBackground({
+  type: 'module',
+  main() {
+    // Create a worker for CPU-intensive tasks
+    const worker = new Worker(
+      browser.runtime.getURL('/analysis-worker.js')
+    );
+    
+    // Listen for messages from worker
+    worker.onmessage = (event) => {
+      console.log('Worker result:', event.data);
+    };
+    
+    // Handle messages that require processing
+    browser.runtime.onMessage.addListener((message) => {
+      if (message.action === 'analyze') {
+        // Send to worker instead of processing in the service worker
+        worker.postMessage(message.data);
+        return true; // Indicate we'll respond asynchronously
+      }
+    });
+  },
+});
+```
+
+## Best Practices
+
+1. **Use ESM where possible**: Better performance and modern features
+2. **Avoid Remote Code**: Use with caution and understand the security implications
+3. **Isolate Complex UIs**: Use Shadow DOM or iframes for complex UI elements
+4. **Split Background Logic**: Use workers for CPU-intensive tasks
+5. **Optimize Bundle Size**: Implement code splitting for faster loading
+6. **Cache API Responses**: Reduce API calls with strategic caching
+7. **Conditional Features**: Use environment variables to enable/disable features 

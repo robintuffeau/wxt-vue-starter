@@ -1,0 +1,360 @@
+---
+description: Testing browser extensions with WXT - unit testing with Vitest and E2E testing with Playwright
+globs: 
+alwaysApply: false
+---
+# Testing Browser Extensions
+
+Testing browser extensions can be challenging, but WXT provides first-class support for both unit testing and end-to-end testing.
+
+## Unit Testing with Vitest
+
+WXT includes built-in support for [Vitest](mdc:https:/vitest.dev), a Vite-native testing framework.
+
+### Setup
+
+1. Install Vitest and related packages:
+
+```bash
+pnpm add -D vitest @vitest/ui
+```
+
+2. Create a Vitest configuration file:
+
+```typescript
+// vitest.config.ts
+import { defineConfig } from 'vitest/config';
+import { WxtVitest } from 'wxt/testing';
+
+export default defineConfig({
+  plugins: [WxtVitest()],
+  test: {
+    // Vitest configuration
+    environment: 'jsdom',
+    include: ['**/*.{test,spec}.{ts,tsx}'],
+  },
+});
+```
+
+3. Add test scripts to `package.json`:
+
+```json
+{
+  "scripts": {
+    "test": "vitest",
+    "test:ui": "vitest --ui",
+    "test:run": "vitest run"
+  }
+}
+```
+
+### What WxtVitest Provides
+
+The `WxtVitest` plugin offers:
+
+- Polyfills for browser and extension APIs using `@webext-core/fake-browser`
+- Configuration of WXT's Vite plugins, auto-imports, and aliases
+- Environment variables like `import.meta.env.BROWSER` and `import.meta.env.MANIFEST_VERSION`
+
+### Writing Tests
+
+```typescript
+// utils/storage.test.ts
+import { describe, it, expect, beforeEach } from 'vitest';
+import { fakeBrowser } from 'wxt/testing';
+
+// Import the code to test
+import { userStorage } from './storage';
+
+// Example test
+describe('userStorage', () => {
+  // Reset extension APIs between tests
+  beforeEach(() => {
+    fakeBrowser.reset();
+  });
+
+  it('should save user data', async () => {
+    const userData = { name: 'John', preferences: { theme: 'dark' } };
+    
+    await userStorage.saveUser(userData);
+    
+    // Verify data was saved to storage
+    const storedData = await browser.storage.local.get('user');
+    expect(storedData.user).toEqual(userData);
+  });
+
+  it('should retrieve user data', async () => {
+    // Set up test data
+    const userData = { name: 'John', preferences: { theme: 'dark' } };
+    await browser.storage.local.set({ user: userData });
+    
+    // Test the function
+    const result = await userStorage.getUser();
+    
+    expect(result).toEqual(userData);
+  });
+});
+```
+
+### Testing Background Scripts
+
+```typescript
+// entrypoints/background.test.ts
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { fakeBrowser } from 'wxt/testing';
+import { onMessage } from './background';
+
+describe('background script', () => {
+  beforeEach(() => {
+    fakeBrowser.reset();
+  });
+
+  it('should handle messages correctly', async () => {
+    // Set up spies or mocks
+    const sendResponseMock = vi.fn();
+    
+    // Trigger the message handler
+    await onMessage(
+      { action: 'getData', id: 123 },
+      { tab: { id: 1 } },
+      sendResponseMock
+    );
+    
+    // Verify the response
+    expect(sendResponseMock).toHaveBeenCalledWith({
+      success: true,
+      data: expect.any(Object)
+    });
+  });
+});
+```
+
+### Testing Content Scripts
+
+```typescript
+// entrypoints/content.test.ts
+import { describe, it, expect, beforeEach } from 'vitest';
+import { fakeBrowser } from 'wxt/testing';
+import { processPage } from './content';
+
+describe('content script', () => {
+  beforeEach(() => {
+    fakeBrowser.reset();
+    
+    // Set up DOM for content script tests
+    document.body.innerHTML = `
+      <div id="target">Original content</div>
+    `;
+  });
+
+  it('should modify the page content', () => {
+    processPage();
+    
+    const element = document.getElementById('target');
+    expect(element?.textContent).toBe('Modified content');
+  });
+});
+```
+
+### Mocking WXT APIs
+
+To mock WXT auto-imported APIs, you need to mock their source modules:
+
+```typescript
+// Check .wxt/types/imports-module.d.ts to find the actual paths
+import { vi } from 'vitest';
+
+// Mock injectScript
+vi.mock('wxt/utils/inject-script', () => ({
+  injectScript: vi.fn().mockResolvedValue({ success: true })
+}));
+
+// Mock createShadowRootUi
+vi.mock('wxt/utils/content-script-ui/shadow-root', () => ({
+  createShadowRootUi: vi.fn().mockReturnValue({
+    mount: vi.fn(),
+    remove: vi.fn()
+  })
+}));
+```
+
+## End-to-End Testing with Playwright
+
+For E2E testing, WXT recommends [Playwright](mdc:https:/playwright.dev), which has excellent support for testing Chrome extensions.
+
+### Setup
+
+1. Install Playwright:
+
+```bash
+pnpm add -D @playwright/test
+npx playwright install chromium
+```
+
+2. Create a Playwright configuration for extension testing:
+
+```typescript
+// playwright.config.ts
+import { defineConfig, devices } from '@playwright/test';
+
+export default defineConfig({
+  testDir: './e2e',
+  use: {
+    trace: 'on-first-retry',
+  },
+  projects: [
+    {
+      name: 'chromium',
+      use: {
+        ...devices['Desktop Chrome'],
+        // Load your extension
+        contextOptions: {
+          // Path to the extension build
+          extensions: ['.output/chrome-mv3'],
+        },
+      },
+    },
+  ],
+});
+```
+
+3. Add a script to `package.json`:
+
+```json
+{
+  "scripts": {
+    "test:e2e": "playwright test"
+  }
+}
+```
+
+### Writing E2E Tests
+
+Create tests in the `e2e` directory:
+
+```typescript
+// e2e/extension.spec.ts
+import { test, expect } from '@playwright/test';
+
+test('extension should work on target website', async ({ page, context }) => {
+  // Get extension ID - needed to access extension pages
+  const [background] = context.serviceWorkers();
+  const extensionId = background.url().split('/')[2];
+  
+  // Navigate to a website where your extension runs
+  await page.goto('https://example.com');
+  
+  // Test content script functionality
+  await expect(page.locator('.extension-added-element')).toBeVisible();
+  
+  // Open the extension popup
+  const popupPage = await context.newPage();
+  await popupPage.goto(`chrome-extension://${extensionId}/popup.html`);
+  
+  // Test popup functionality
+  await expect(popupPage.locator('#extension-popup-content')).toBeVisible();
+});
+```
+
+### Intercepting Background Events
+
+```typescript
+// e2e/background.spec.ts
+import { test, expect } from '@playwright/test';
+
+test('background service worker should respond to events', async ({ context }) => {
+  // Access the background service worker
+  const [background] = context.serviceWorkers();
+  if (!background) throw new Error('No service worker found');
+
+  // Listen for logs from the background
+  const logs: string[] = [];
+  background.on('console', (msg) => logs.push(msg.text()));
+
+  // Navigate to trigger extension behavior
+  const page = await context.newPage();
+  await page.goto('https://example.com');
+  
+  // Verify background activity
+  await expect.poll(() => logs).toContain('Processing page: https://example.com');
+});
+```
+
+### Testing Extension Pages
+
+```typescript
+// e2e/options.spec.ts
+import { test, expect } from '@playwright/test';
+
+test('options page should save settings', async ({ context }) => {
+  // Get extension ID
+  const [background] = context.serviceWorkers();
+  const extensionId = background.url().split('/')[2];
+  
+  // Open options page
+  const page = await context.newPage();
+  await page.goto(`chrome-extension://${extensionId}/options.html`);
+  
+  // Interact with options page
+  await page.locator('#theme-selector').selectOption('dark');
+  await page.locator('#save-button').click();
+  
+  // Verify settings were saved
+  await expect(page.locator('.save-confirmation')).toBeVisible();
+  
+  // Reload page and check if settings persisted
+  await page.reload();
+  await expect(page.locator('#theme-selector')).toHaveValue('dark');
+});
+```
+
+## Integration with CI/CD
+
+Add testing to your CI/CD pipeline:
+
+```yaml
+# .github/workflows/tests.yml
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'pnpm'
+      
+      - name: Install dependencies
+        run: pnpm install
+      
+      - name: Run unit tests
+        run: pnpm test:run
+      
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+      
+      - name: Build extension
+        run: pnpm build
+      
+      - name: Run E2E tests
+        run: pnpm test:e2e
+```
+
+## Best Practices
+
+1. **Focus on critical paths**: Test the core functionality of your extension
+2. **Mock API calls**: Use Vitest's mocking capabilities for external services
+3. **Test cross-browser**: Run tests against different browser targets
+4. **Test UI components**: Use component testing for complex UIs
+5. **Test permissions**: Verify your extension works with required permissions
+6. **Test upgrades**: Verify your extension handles updates correctly
+7. **Use snapshots sparingly**: Extension UIs can change frequently 

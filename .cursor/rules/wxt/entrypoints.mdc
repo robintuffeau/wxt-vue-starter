@@ -1,0 +1,314 @@
+---
+description: WXT entrypoints - definition, types, and configuration for browser extensions
+globs: 
+alwaysApply: false
+---
+# Entrypoints
+
+In WXT, entrypoints are files inside the `entrypoints/` directory that get bundled into your extension. They can be HTML, JS, CSS, or any variant supported by Vite (TS, JSX, SCSS, etc).
+
+## Entrypoint Structure
+
+Entrypoints can be defined in two ways:
+
+### Single File Approach
+```
+📂 entrypoints/
+   📄 {name}.{ext}
+```
+
+### Directory Approach (Recommended)
+```
+📂 entrypoints/
+   📂 {name}/
+      📄 index.{ext}    ← This file is the entrypoint
+      📄 other-files.ts ← Related files can be included here
+```
+
+## Listed vs Unlisted Entrypoints
+
+- **Listed Entrypoints**: Referenced in the `manifest.json` (popup, options, background, etc.)
+- **Unlisted Entrypoints**: Not referenced in the manifest, but still used by the extension
+
+## Manifest Options
+
+With WXT, entrypoint options are defined directly inside the entrypoint file:
+
+### JavaScript/TypeScript Entrypoints
+
+```typescript
+export default defineContentScript({
+  matches: ['*://*.example.com/*'],
+  main(ctx) {
+    // Content script code
+  },
+});
+```
+
+### HTML Entrypoints
+
+Options are defined as `<meta>` tags in the HTML head:
+
+```html
+<!DOCTYPE html>
+<html>
+<head>
+  <meta name="manifest.type" content="page_action" />
+</head>
+<body>
+  <!-- ... -->
+</body>
+</html>
+```
+
+## Entrypoint Types
+
+### Background Script
+
+Background scripts run in the extension's background context:
+
+```typescript
+// entrypoints/background.ts
+export default defineBackground(() => {
+  console.log('Background script loaded');
+  
+  browser.runtime.onInstalled.addListener(({ reason }) => {
+    if (reason === 'install') {
+      // Extension was installed
+    }
+  });
+});
+```
+
+For MV3, the background becomes a service worker. For ESM support (MV3 only):
+
+```typescript
+export default defineBackground({
+  type: 'module',
+  main() {
+    // Your code here
+  },
+});
+```
+
+### Content Scripts
+
+Content scripts run in the context of web pages:
+
+```typescript
+// entrypoints/example.content.ts
+export default defineContentScript({
+  matches: ['*://*.example.com/*'],
+  runAt: 'document_end',
+  cssInjectionMode: 'ui',
+  
+  main(ctx) {
+    console.log('Content script loaded');
+    
+    // Clean up resources when context is invalidated
+    if (ctx.isInvalid) return;
+    
+    // Add DOM event listeners safely
+    ctx.addEventListener(document, 'click', () => {
+      // Handle click
+    });
+  },
+});
+```
+
+#### Content Script CSS
+
+Import CSS directly in your content script:
+
+```typescript
+// entrypoints/example.content.ts
+import './style.css';
+
+export default defineContentScript({
+  // ...
+});
+```
+
+### Popup
+
+The extension's popup UI appears when clicking the extension icon:
+
+```html
+<!-- entrypoints/popup/index.html -->
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <title>Extension Popup</title>
+  <!-- Set the action.default_title in the manifest -->
+  
+  <!-- Customize manifest options -->
+  <meta name="manifest.default_icon" content="{
+    16: '/icon-16.png',
+    48: '/icon-48.png'
+  }" />
+</head>
+<body>
+  <div id="app"></div>
+  <script src="./main.ts" type="module"></script>
+</body>
+</html>
+```
+
+### Options Page
+
+Creates a page for extension settings:
+
+```html
+<!-- entrypoints/options/index.html -->
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <title>Extension Options</title>
+  
+  <!-- Customize manifest options -->
+  <meta name="manifest.open_in_tab" content="true" />
+</head>
+<body>
+  <div id="app"></div>
+  <script src="./main.ts" type="module"></script>
+</body>
+</html>
+```
+
+### Side Panel
+
+Adds a panel to the browser's side:
+
+```html
+<!-- entrypoints/sidepanel/index.html -->
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <title>Side Panel</title>
+  
+  <!-- Customize manifest options -->
+  <meta name="manifest.open_at_install" content="true" />
+</head>
+<body>
+  <div id="app"></div>
+  <script src="./main.ts" type="module"></script>
+</body>
+</html>
+```
+
+### Devtools Page
+
+Creates a panel in browser DevTools:
+
+```html
+<!-- entrypoints/devtools/index.html -->
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+</head>
+<body>
+  <script src="./main.ts" type="module"></script>
+</body>
+</html>
+```
+
+### Override Pages
+
+Replace browser built-in pages:
+
+```html
+<!-- entrypoints/newtab/index.html (or bookmarks.html, history.html) -->
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <title>Custom New Tab</title>
+</head>
+<body>
+  <div id="app"></div>
+  <script src="./main.ts" type="module"></script>
+</body>
+</html>
+```
+
+### Unlisted Pages
+
+Create pages that aren't listed in the manifest:
+
+```html
+<!-- entrypoints/welcome/index.html -->
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <title>Welcome Page</title>
+</head>
+<body>
+  <div id="app"></div>
+  <script src="./main.ts" type="module"></script>
+</body>
+</html>
+```
+
+Access at runtime via:
+```typescript
+const url = browser.runtime.getURL('/welcome.html');
+window.open(url);
+```
+
+### Unlisted Scripts
+
+Create JS files not referenced in the manifest:
+
+```typescript
+// entrypoints/injected-script.ts
+export default defineUnlistedScript(() => {
+  console.log('This script was injected into the page');
+  return 'Data to return if executed via scripting API';
+});
+```
+
+Load/execute using:
+```typescript
+// Dynamically load
+const url = browser.runtime.getURL('/injected-script.js');
+
+// Or execute via scripting API
+await browser.scripting.executeScript({
+  target: { tabId },
+  files: ['/injected-script.js']
+});
+```
+
+## Cross-Browser Compatibility
+
+Filter entrypoints for specific browsers:
+
+```typescript
+export default defineContentScript({
+  include: ['firefox'], // Only include in Firefox builds
+  exclude: ['safari'],  // Exclude from Safari builds
+  
+  main(ctx) {
+    // ...
+  }
+});
+```
+
+For HTML entrypoints:
+
+```html
+<meta name="manifest.include" content="['chrome', 'firefox']" />
+<meta name="manifest.exclude" content="['safari']" />
+```
+
+## Code Organization Best Practices
+
+- Place related files together in an entrypoint directory
+- Use the directory approach for complex entrypoints
+- Keep logic modular with imports from shared utilities
+- Use type-safe APIs with the context pattern for content scripts 

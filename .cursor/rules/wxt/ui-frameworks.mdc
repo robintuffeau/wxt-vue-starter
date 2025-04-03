@@ -1,0 +1,571 @@
+---
+description: Using UI frameworks with WXT - React, Vue, Svelte, Solid, and their integration patterns
+globs: 
+alwaysApply: false
+---
+# UI Frameworks
+
+WXT provides seamless support for modern UI frameworks, making it easy to build extension UI with your preferred tools. You can use any framework supported by Vite, but WXT offers specially optimized support for:
+
+- Vue
+- React
+- Svelte
+- Solid
+
+## Using Framework Templates
+
+The easiest way to get started is with WXT's framework-specific templates:
+
+```bash
+# Create a new extension project with your preferred framework
+pnpm dlx wxt@latest init
+
+# Choose your framework when prompted
+# - Vue
+# - React
+# - Svelte
+# - Solid
+# - Vanilla TypeScript
+```
+
+This sets up a project with all the necessary configurations for your chosen framework.
+
+## Manually Adding Frameworks
+
+If you have an existing project, you can add framework support manually:
+
+### Vue
+
+1. Install dependencies:
+```bash
+pnpm add vue
+pnpm add -D @vitejs/plugin-vue
+```
+
+2. Create a framework module:
+```typescript
+// modules/vue.ts
+import { defineWxtModule } from 'wxt/modules';
+import vue from '@vitejs/plugin-vue';
+
+export default defineWxtModule({
+  setup(wxt) {
+    wxt.vite.plugins.push(vue());
+  },
+});
+```
+
+3. Create Vue components:
+```vue
+<!-- components/HelloWorld.vue -->
+<script setup lang="ts">
+import { ref } from 'vue';
+
+const count = ref(0);
+</script>
+
+<template>
+  <div>
+    <h1>Vue Component</h1>
+    <button @click="count++">Count: {{ count }}</button>
+  </div>
+</template>
+```
+
+4. Use in an entrypoint:
+```html
+<!-- entrypoints/popup/index.html -->
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <title>Popup</title>
+</head>
+<body>
+  <div id="app"></div>
+  <script src="./main.ts" type="module"></script>
+</body>
+</html>
+```
+
+```typescript
+// entrypoints/popup/main.ts
+import { createApp } from 'vue';
+import App from './App.vue';
+
+createApp(App).mount('#app');
+```
+
+### React
+
+1. Install dependencies:
+```bash
+pnpm add react react-dom
+pnpm add -D @vitejs/plugin-react
+```
+
+2. Create a framework module:
+```typescript
+// modules/react.ts
+import { defineWxtModule } from 'wxt/modules';
+import react from '@vitejs/plugin-react';
+
+export default defineWxtModule({
+  setup(wxt) {
+    wxt.vite.plugins.push(react());
+  },
+});
+```
+
+3. Create React components:
+```tsx
+// components/HelloWorld.tsx
+import { useState } from 'react';
+
+export function HelloWorld() {
+  const [count, setCount] = useState(0);
+  
+  return (
+    <div>
+      <h1>React Component</h1>
+      <button onClick={() => setCount(count + 1)}>
+        Count: {count}
+      </button>
+    </div>
+  );
+}
+```
+
+4. Use in an entrypoint:
+```typescript
+// entrypoints/popup/main.tsx
+import React from 'react';
+import ReactDOM from 'react-dom/client';
+import App from './App';
+
+ReactDOM.createRoot(document.getElementById('app')!).render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>
+);
+```
+
+### Svelte
+
+1. Install dependencies:
+```bash
+pnpm add -D svelte @sveltejs/vite-plugin-svelte
+```
+
+2. Create a framework module:
+```typescript
+// modules/svelte.ts
+import { defineWxtModule } from 'wxt/modules';
+import { svelte } from '@sveltejs/vite-plugin-svelte';
+
+export default defineWxtModule({
+  setup(wxt) {
+    wxt.vite.plugins.push(svelte());
+  },
+});
+```
+
+3. Create Svelte components:
+```svelte
+<!-- components/HelloWorld.svelte -->
+<script lang="ts">
+  let count = 0;
+  
+  function increment() {
+    count += 1;
+  }
+</script>
+
+<div>
+  <h1>Svelte Component</h1>
+  <button on:click={increment}>
+    Count: {count}
+  </button>
+</div>
+```
+
+4. Use in an entrypoint:
+```typescript
+// entrypoints/popup/main.ts
+import App from './App.svelte';
+
+const app = new App({
+  target: document.getElementById('app')!,
+});
+
+export default app;
+```
+
+### Solid
+
+1. Install dependencies:
+```bash
+pnpm add solid-js
+pnpm add -D vite-plugin-solid
+```
+
+2. Create a framework module:
+```typescript
+// modules/solid.ts
+import { defineWxtModule } from 'wxt/modules';
+import solid from 'vite-plugin-solid';
+
+export default defineWxtModule({
+  setup(wxt) {
+    wxt.vite.plugins.push(solid());
+  },
+});
+```
+
+3. Create Solid components:
+```tsx
+// components/HelloWorld.tsx
+import { createSignal } from 'solid-js';
+
+export function HelloWorld() {
+  const [count, setCount] = createSignal(0);
+  
+  return (
+    <div>
+      <h1>Solid Component</h1>
+      <button onClick={() => setCount(count() + 1)}>
+        Count: {count()}
+      </button>
+    </div>
+  );
+}
+```
+
+4. Use in an entrypoint:
+```typescript
+// entrypoints/popup/main.tsx
+import { render } from 'solid-js/web';
+import App from './App';
+
+render(() => <App />, document.getElementById('app')!);
+```
+
+## Using Official Framework Modules
+
+Instead of manually setting up frameworks, you can use official WXT modules:
+
+```bash
+# Install the framework module
+pnpm add -D @wxt-dev/module-vue
+```
+
+```typescript
+// wxt.config.ts
+export default defineConfig({
+  modules: [
+    '@wxt-dev/module-vue',
+    // OR: '@wxt-dev/module-react'
+    // OR: '@wxt-dev/module-svelte'
+    // OR: '@wxt-dev/module-solid'
+  ],
+});
+```
+
+## Framework-Specific Features
+
+### Vue
+
+WXT provides special support for Vue:
+
+- Auto-imports for Vue composables in the `composables/` directory
+- Support for `<script setup>` syntax
+- `<style>` tag scoping
+- TypeScript integration with Vue templates
+- Component auto-imports
+
+```typescript
+// entrypoints/popup/main.ts
+// No imports needed due to auto-imports
+// Components in components/ are auto-imported
+
+export default defineComponent({
+  setup() {
+    // useStorage composable auto-imported from composables/
+    const settings = useStorage();
+    
+    return {
+      settings
+    };
+  }
+});
+```
+
+### React
+
+WXT provides special support for React:
+
+- Auto-imports for React hooks in the `hooks/` directory
+- Full JSX/TSX support
+- TypeScript integration
+
+```typescript
+// entrypoints/popup/App.tsx
+// Custom hook auto-imported from hooks/
+export default function App() {
+  // useDarkMode hook from hooks/ auto-imported
+  const [isDark, setIsDark] = useDarkMode();
+  
+  return (
+    <div className={isDark ? 'dark' : 'light'}>
+      <h1>My Extension</h1>
+      <button onClick={() => setIsDark(!isDark)}>
+        Toggle Dark Mode
+      </button>
+    </div>
+  );
+}
+```
+
+## Building UIs for Content Scripts
+
+When creating UIs within content scripts, you can use any framework with WXT's UI utilities:
+
+### Shadow DOM with Vue
+
+```typescript
+// entrypoints/example.content.ts
+import App from './App.vue';
+import { createApp } from 'vue';
+
+export default defineContentScript({
+  matches: ['*://*.example.com/*'],
+  cssInjectionMode: 'ui',
+  
+  async main(ctx) {
+    const ui = await createShadowRootUi(ctx, {
+      name: 'my-vue-ui',
+      position: 'fixed',
+      anchor: 'top-right',
+      
+      onMount(container) {
+        // Create and mount a Vue app inside the shadow DOM
+        const app = createApp(App);
+        app.mount(container);
+        
+        // Return a cleanup function
+        return () => app.unmount();
+      },
+    });
+    
+    ui.mount();
+  },
+});
+```
+
+### Shadow DOM with React
+
+```typescript
+// entrypoints/example.content.ts
+import App from './App';
+import { createElement } from 'react';
+import { createRoot, Root } from 'react-dom/client';
+
+export default defineContentScript({
+  matches: ['*://*.example.com/*'],
+  cssInjectionMode: 'ui',
+  
+  async main(ctx) {
+    let root: Root;
+    
+    const ui = await createShadowRootUi(ctx, {
+      name: 'my-react-ui',
+      position: 'fixed',
+      anchor: 'bottom-right',
+      
+      onMount(container) {
+        // Create and mount a React app inside the shadow DOM
+        root = createRoot(container);
+        root.render(createElement(App));
+        
+        // Return a cleanup function
+        return () => root.unmount();
+      },
+    });
+    
+    ui.mount();
+  },
+});
+```
+
+## Multiple Apps
+
+For complex extensions with multiple UI pages, organize your codebase efficiently:
+
+```
+📂 entrypoints/
+   📂 popup/
+      📄 index.html
+      📄 App.vue
+      📄 main.ts
+   📂 options/
+      📄 index.html
+      📄 App.vue
+      📄 main.ts
+   📂 sidepanel/
+      📄 index.html
+      📄 App.vue
+      📄 main.ts
+📂 components/       # Shared components
+   📄 Header.vue
+   📄 Footer.vue
+📂 composables/      # Shared composables or hooks
+   📄 useStorage.ts
+📂 utils/            # Shared utilities
+   📄 storage.ts
+```
+
+### Sharing State Between Pages
+
+For shared state between extension pages:
+
+#### With Vue and Pinia:
+
+```typescript
+// stores/settings.ts
+import { defineStore } from 'pinia';
+
+export const useSettingsStore = defineStore('settings', {
+  state: () => ({
+    theme: 'light',
+    notifications: true,
+  }),
+  
+  actions: {
+    async saveSettings() {
+      await browser.storage.local.set({
+        settings: this.$state,
+      });
+    },
+    
+    async loadSettings() {
+      const data = await browser.storage.local.get('settings');
+      if (data.settings) {
+        this.$patch(data.settings);
+      }
+    },
+  },
+});
+```
+
+```typescript
+// entrypoints/popup/main.ts
+import { createApp } from 'vue';
+import { createPinia } from 'pinia';
+import App from './App.vue';
+
+const app = createApp(App);
+app.use(createPinia());
+app.mount('#app');
+```
+
+#### With React and Zustand:
+
+```typescript
+// stores/settings.ts
+import { create } from 'zustand';
+
+interface SettingsState {
+  theme: 'light' | 'dark';
+  notifications: boolean;
+  setTheme: (theme: 'light' | 'dark') => void;
+  toggleNotifications: () => void;
+  saveSettings: () => Promise<void>;
+  loadSettings: () => Promise<void>;
+}
+
+export const useSettingsStore = create<SettingsState>((set, get) => ({
+  theme: 'light',
+  notifications: true,
+  
+  setTheme: (theme) => set({ theme }),
+  toggleNotifications: () => set(state => ({ notifications: !state.notifications })),
+  
+  saveSettings: async () => {
+    const { theme, notifications } = get();
+    await browser.storage.local.set({
+      settings: { theme, notifications },
+    });
+  },
+  
+  loadSettings: async () => {
+    const data = await browser.storage.local.get('settings');
+    if (data.settings) {
+      set(data.settings);
+    }
+  },
+}));
+```
+
+## Routing in UI Pages
+
+For complex UI pages with multiple routes:
+
+### Vue Router
+
+```typescript
+// entrypoints/options/router.ts
+import { createRouter, createWebHashHistory } from 'vue-router';
+
+export const router = createRouter({
+  history: createWebHashHistory(),
+  routes: [
+    { path: '/', component: () => import('./views/Home.vue') },
+    { path: '/settings', component: () => import('./views/Settings.vue') },
+    { path: '/about', component: () => import('./views/About.vue') },
+  ],
+});
+```
+
+```typescript
+// entrypoints/options/main.ts
+import { createApp } from 'vue';
+import App from './App.vue';
+import { router } from './router';
+
+const app = createApp(App);
+app.use(router);
+app.mount('#app');
+```
+
+### React Router
+
+```typescript
+// entrypoints/options/App.tsx
+import { HashRouter, Routes, Route } from 'react-router-dom';
+import Home from './views/Home';
+import Settings from './views/Settings';
+import About from './views/About';
+
+export default function App() {
+  return (
+    <HashRouter>
+      <Routes>
+        <Route path="/" element={<Home />} />
+        <Route path="/settings" element={<Settings />} />
+        <Route path="/about" element={<About />} />
+      </Routes>
+    </HashRouter>
+  );
+}
+```
+
+## Best Practices
+
+1. **Prefer Shadow DOM for content script UIs**: Isolates your UI from the page
+2. **Organize by feature**: Group related components together
+3. **Use auto-imports**: Take advantage of WXT's auto-import feature
+4. **Share code between entrypoints**: Use shared directories for common code
+5. **Use TypeScript**: All frameworks work well with TypeScript in WXT
+6. **Update efficiently**: Use proper cleanup functions to prevent memory leaks 
+7. **Keep UI responsive**: Extension UIs should be lightweight and fast
+8. **Test UI components**: Use component testing tools like Testing Library 

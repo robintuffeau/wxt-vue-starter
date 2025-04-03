@@ -1,0 +1,317 @@
+---
+description: Asset management in WXT - handling assets, public directories, and resources
+globs: 
+alwaysApply: false
+---
+# Asset Management
+
+WXT provides several ways to work with assets in your browser extension, from static files to dynamically processed resources.
+
+## Public Directory
+
+The public directory contains static files that are copied as-is to your extension's output directory. By default, this is the `public/` folder at the root of your project.
+
+```
+📂 public/
+   📄 icon-16.png
+   📄 icon-48.png
+   📄 icon-128.png
+   📄 manifest.json (optional, overridden by WXT)
+   📁 _locales/
+      📁 en/
+         📄 messages.json
+      📁 fr/
+         📄 messages.json
+```
+
+### Configuring the Public Directory
+
+You can change the location of the public directory in your `wxt.config.ts`:
+
+```typescript
+// wxt.config.ts
+export default defineConfig({
+  publicDir: 'static', // Default is 'public'
+});
+```
+
+### Accessing Public Files
+
+Files in the public directory are available at the root of your extension:
+
+```typescript
+// Access files from the public directory
+const iconUrl = browser.runtime.getURL('/icon-48.png');
+const cssUrl = browser.runtime.getURL('/styles/theme.css');
+
+// Create an image element with the icon
+const img = document.createElement('img');
+img.src = iconUrl;
+document.body.appendChild(img);
+```
+
+### Public Files vs. Assets
+
+There are two main ways to include files in your extension:
+
+1. **Public Directory**: Files are copied as-is, no processing
+2. **Assets**: Files imported in your code, processed by Vite
+
+```typescript
+// Static file from public directory
+const publicImageUrl = browser.runtime.getURL('/images/logo.png');
+
+// Processed asset via import
+import logoUrl from '~/assets/logo.png';
+// logoUrl will be something like '/assets/logo-a1b2c3d4.png'
+```
+
+## Imported Assets
+
+WXT uses Vite's asset handling to process files imported directly in your code.
+
+### Importing Images
+
+```typescript
+// Import an image file
+import logoUrl from '~/assets/logo.png';
+
+// Use the imported URL
+const img = document.createElement('img');
+img.src = logoUrl;
+document.body.appendChild(img);
+```
+
+### Importing CSS
+
+```typescript
+// Import CSS
+import '~/assets/styles.css';
+
+// Import Sass/SCSS
+import '~/assets/theme.scss';
+```
+
+### Importing JSON
+
+```typescript
+// Import JSON file
+import data from '~/assets/data.json';
+console.log(data.version);
+```
+
+### Organizing Assets
+
+It's good practice to organize your assets in an assets directory within your source code:
+
+```
+📂 src/
+   📂 assets/
+      📁 images/
+         📄 logo.png
+         📄 icon.svg
+      📁 styles/
+         📄 main.css
+         📄 themes.scss
+      📁 data/
+         📄 config.json
+```
+
+## SVG Assets
+
+SVG files can be imported in different ways:
+
+### As URL
+
+```typescript
+// Import as URL
+import logoUrl from '~/assets/logo.svg';
+
+const img = document.createElement('img');
+img.src = logoUrl;
+```
+
+### As Component (with Vue)
+
+```typescript
+// Import as component (with Vue)
+import { defineComponent } from 'vue';
+import LogoSvg from '~/assets/logo.svg?component';
+
+export default defineComponent({
+  components: { LogoSvg },
+  template: `<LogoSvg class="logo" />`,
+});
+```
+
+### As Raw Content
+
+```typescript
+// Import as raw content
+import logoSvgRaw from '~/assets/logo.svg?raw';
+
+// Insert the SVG directly into the DOM
+const container = document.getElementById('svg-container');
+container.innerHTML = logoSvgRaw;
+```
+
+## Web Accessible Resources
+
+Files that need to be accessible from content scripts or web pages must be declared as web accessible resources in your manifest.
+
+### Adding Web Accessible Resources
+
+WXT makes this easy:
+
+```typescript
+// wxt.config.ts
+export default defineConfig({
+  manifest: {
+    web_accessible_resources: [
+      {
+        resources: ['images/*', 'fonts/*', 'injected-script.js'],
+        matches: ['*://*.example.com/*'],
+      },
+    ],
+  },
+});
+```
+
+### Accessing Web Accessible Resources
+
+```typescript
+// Get URL of a web accessible resource
+const scriptUrl = browser.runtime.getURL('injected-script.js');
+
+// Insert a script into the page
+const script = document.createElement('script');
+script.src = scriptUrl;
+document.head.appendChild(script);
+```
+
+## Dynamic Asset Generation
+
+You can generate assets dynamically using WXT's hook system:
+
+```typescript
+// wxt.config.ts or modules/asset-generator.ts
+import { defineWxtModule } from 'wxt/modules';
+
+export default defineWxtModule({
+  setup(wxt) {
+    wxt.hook('build:publicAssets', (_, assets) => {
+      // Add a dynamically generated JSON file
+      assets.push({
+        relativeDest: 'generated-config.json',
+        contents: JSON.stringify({
+          timestamp: Date.now(),
+          environment: wxt.config.mode,
+          buildId: Math.random().toString(36).substring(2, 15),
+        }, null, 2),
+      });
+      
+      // Add a dynamically generated CSS file
+      assets.push({
+        relativeDest: 'theme.css',
+        contents: `:root {
+  --primary-color: #${Math.floor(Math.random()*16777215).toString(16)};
+  --build-time: "${new Date().toISOString()}";
+}`,
+      });
+    });
+  },
+});
+```
+
+## Working with WASM
+
+Web Assembly (WASM) files can be imported and used in your extension:
+
+### Importing WASM
+
+```typescript
+// Direct import with Vite's WASM support
+import * as module from '~/assets/example.wasm';
+
+// Use the WASM module
+console.log(module.add(1, 2)); // 3
+```
+
+### Using WASM in a Worker
+
+```typescript
+// background.ts
+export default defineBackground(() => {
+  // Create a worker to run WASM code
+  const worker = new Worker(
+    browser.runtime.getURL('wasm-worker.js')
+  );
+  
+  // Handle messages from the worker
+  worker.onmessage = (e) => {
+    console.log('Result from WASM:', e.data);
+  };
+  
+  // Send data to the worker
+  worker.postMessage({ input: [1, 2, 3, 4, 5] });
+});
+```
+
+## Font Management
+
+### Including Fonts
+
+1. **In the public directory**:
+
+```
+📂 public/
+   📂 fonts/
+      📄 opensans.woff2
+      📄 roboto.woff2
+```
+
+Access with:
+```css
+@font-face {
+  font-family: 'Open Sans';
+  src: url('/fonts/opensans.woff2') format('woff2');
+}
+```
+
+2. **As imported assets**:
+
+```typescript
+// Import font files
+import openSansUrl from '~/assets/fonts/opensans.woff2';
+import robotoUrl from '~/assets/fonts/roboto.woff2';
+
+// Create CSS to use the fonts
+const fontFaces = `
+  @font-face {
+    font-family: 'Open Sans';
+    src: url('${openSansUrl}') format('woff2');
+  }
+  @font-face {
+    font-family: 'Roboto';
+    src: url('${robotoUrl}') format('woff2');
+  }
+`;
+
+// Add the font faces to the page
+const style = document.createElement('style');
+style.textContent = fontFaces;
+document.head.appendChild(style);
+```
+
+## Best Practices
+
+1. **Organize assets logically**: Group assets by type or feature
+2. **Use the public directory for static files**: Files that don't need processing
+3. **Import assets in code for processing**: Leverage Vite's asset pipeline
+4. **Optimize images**: Compress images before adding them to your extension
+5. **Use SVG where possible**: SVGs scale well and are typically smaller
+6. **Declare web accessible resources**: Only expose what's necessary
+7. **Use dynamically generated assets sparingly**: They can increase build times
+8. **Use relative paths**: Access public files with relative paths rather than absolute paths
+9. **Lazy load assets**: Load assets only when needed to reduce initial load time
+10. **Consider caching**: Use appropriate cache headers for remotely loaded resources 

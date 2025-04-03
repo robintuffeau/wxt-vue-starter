@@ -1,0 +1,253 @@
+---
+description: Development tools and configuration in WXT - auto-imports, environment variables, and runtime config
+globs: 
+alwaysApply: false
+---
+# Development Tools
+
+WXT provides several features that enhance your development experience and help you write cleaner, more maintainable code.
+
+## Auto-Imports
+
+WXT uses `unimport` (same as Nuxt) to automatically import commonly used functions and components, eliminating the need for explicit import statements.
+
+### Default Auto-Imports
+
+By default, WXT sets up auto-imports for:
+
+- All WXT APIs (`defineBackground`, `defineContentScript`, etc.)
+- All exports from these directories:
+  - `<srcDir>/components/*` - UI components
+  - `<srcDir>/composables/*` - Vue composables
+  - `<srcDir>/hooks/*` - React/Solid hooks
+  - `<srcDir>/utils/*` - Utility functions
+
+### Using Auto-Imports
+
+With auto-imports enabled, you can use imported functions directly:
+
+```typescript
+// Without auto-imports
+import { browser } from 'wxt/browser';
+import { formatDate } from '~/utils/date';
+
+// With auto-imports (no import statements needed)
+export default defineContentScript({
+  matches: ['<all_urls>'],
+  main() {
+    browser.runtime.sendMessage({ action: 'pageLoaded' });
+    console.log('Formatted date:', formatDate(new Date()));
+  },
+});
+```
+
+### Configuring Auto-Imports
+
+Customize auto-imports in your `wxt.config.ts`:
+
+```typescript
+export default defineConfig({
+  imports: {
+    // See https://www.npmjs.com/package/unimport#configurations
+    dirs: [
+      // Add more directories to auto-import from
+      './helpers',
+      './services',
+    ],
+    // Add specific imports
+    imports: [
+      { from: 'lodash-es', name: 'debounce' },
+      { from: 'lodash-es', name: 'throttle' },
+    ],
+  },
+});
+```
+
+### TypeScript Support
+
+For TypeScript to recognize auto-imports, you need to run the `wxt prepare` command. Add it to your `postinstall` script:
+
+```json
+// package.json
+{
+  "scripts": {
+    "postinstall": "wxt prepare"
+  }
+}
+```
+
+This generates type definitions in `.wxt/types/imports-module.d.ts`.
+
+### ESLint Support
+
+For ESLint to recognize auto-imports, WXT can generate an ESLint configuration:
+
+```typescript
+// wxt.config.ts
+export default defineConfig({
+  imports: {
+    eslintrc: {
+      enabled: true, // Set to 9 for ESLint v9
+    },
+  },
+});
+```
+
+Then in your ESLint config:
+
+```javascript
+// eslint.config.mjs (ESLint v9)
+import autoImports from './.wxt/eslint-auto-imports.mjs';
+
+export default [
+  autoImports,
+  // Your other config...
+];
+```
+
+### Disabling Auto-Imports
+
+If you prefer explicit imports, you can disable auto-imports:
+
+```typescript
+export default defineConfig({
+  imports: false,
+});
+```
+
+### Explicit Imports with `#imports`
+
+Even with auto-imports disabled, you can import WXT APIs from the `#imports` module:
+
+```typescript
+import {
+  createShadowRootUi,
+  defineContentScript,
+  browser
+} from '#imports';
+```
+
+## Environment Variables
+
+WXT supports environment variables through dotenv files, similar to Vite.
+
+### Dotenv Files
+
+Create any of these files in your project:
+
+```
+.env                  # Always loaded
+.env.local            # Always loaded, ignored by git
+.env.[mode]           # Loaded based on mode (development, production)
+.env.[mode].local     # Loaded based on mode, ignored by git
+.env.[browser]        # Loaded based on target browser (chrome, firefox)
+.env.[browser].local  # Loaded based on browser, ignored by git
+.env.[mode].[browser] # Combination of mode and browser
+```
+
+Variable values are available at runtime via `import.meta.env`:
+
+```bash
+# .env
+WXT_API_KEY=abcdef123456
+```
+
+```typescript
+// In your code
+const apiKey = import.meta.env.WXT_API_KEY;
+```
+
+All environment variables must be prefixed with `WXT_` or `VITE_` to be exposed to your extension code.
+
+### Built-in Environment Variables
+
+WXT provides these built-in environment variables:
+
+| Variable | Type | Description |
+|----------|------|-------------|
+| `import.meta.env.MANIFEST_VERSION` | `2 \| 3` | Target manifest version |
+| `import.meta.env.BROWSER` | `string` | Target browser |
+| `import.meta.env.CHROME` | `boolean` | Is Chrome build? |
+| `import.meta.env.FIREFOX` | `boolean` | Is Firefox build? |
+| `import.meta.env.SAFARI` | `boolean` | Is Safari build? |
+| `import.meta.env.EDGE` | `boolean` | Is Edge build? |
+| `import.meta.env.OPERA` | `boolean` | Is Opera build? |
+| `import.meta.env.MODE` | `string` | Current build mode |
+| `import.meta.env.PROD` | `boolean` | Production mode? |
+| `import.meta.env.DEV` | `boolean` | Development mode? |
+
+These are useful for conditional logic based on browser or build mode:
+
+```typescript
+if (import.meta.env.FIREFOX) {
+  // Firefox-specific code
+}
+
+if (import.meta.env.DEV) {
+  // Development-only code
+}
+```
+
+### Using Environment Variables in Manifest
+
+To use environment variables in the manifest, use the function syntax:
+
+```typescript
+export default defineConfig({
+  manifest: () => ({
+    oauth2: {
+      client_id: import.meta.env.WXT_CLIENT_ID,
+    },
+  }),
+});
+```
+
+## Runtime Config
+
+WXT provides a way to define runtime configuration in a single place with `app.config.ts`:
+
+```typescript
+// <srcDir>/app.config.ts
+import { defineAppConfig } from '#imports';
+
+// Define types for your config
+declare module 'wxt/utils/define-app-config' {
+  export interface WxtAppConfig {
+    theme: 'light' | 'dark';
+    apiEndpoint: string;
+  }
+}
+
+export default defineAppConfig({
+  theme: 'dark',
+  apiEndpoint: 'https://api.example.com/v1',
+});
+```
+
+To access this config at runtime, use the `useAppConfig` function:
+
+```typescript
+import { useAppConfig } from '#imports';
+
+const config = useAppConfig();
+console.log(config.theme); // 'dark'
+fetch(config.apiEndpoint + '/users');
+```
+
+### Using Environment Variables in Runtime Config
+
+You can combine runtime config with environment variables:
+
+```typescript
+export default defineAppConfig({
+  theme: import.meta.env.WXT_THEME || 'dark',
+  apiEndpoint: import.meta.env.WXT_API_ENDPOINT || 'https://api.example.com/v1',
+  debug: import.meta.env.WXT_DEBUG === 'true',
+});
+```
+
+This has several advantages:
+- Define all expected environment variables in one place
+- Convert strings to appropriate types
+- Provide default values
+- Type safety with TypeScript 
