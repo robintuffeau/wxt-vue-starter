@@ -18,12 +18,11 @@
     "vue": "^3.5.12"
   },
   "devDependencies": {
-    "@tailwindcss/postcss": "^4.1.2",
     "@wxt-dev/module-vue": "^1.0.1",
     "autoprefixer": "^10.4.21",
     "postcss": "^8.5.3",
-    "tailwindcss": "^4.1.2",
-    "typescript": "5.6.3",
+    "tailwindcss": "^3.4.1",
+    "typescript": "5.8.2",
     "vue-tsc": "^2.1.10",
     "wxt": "^0.20.0"
   }
