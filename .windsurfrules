@@ -1,0 +1,48 @@
+# WXT Chrome Extension Development Guidelines
+
+You are developing a Chrome extension using WXT (Web Extension Tools), a next-generation web extension framework. Always refer to the official WXT documentation at [https://wxt.dev/knowledge/docs.txt](https://wxt.dev/knowledge/docs.txt) for best practices and implementation details.
+
+## WXT-Specific Guidelines
+
+- Follow the WXT project structure conventions:
+
+  - Use the appropriate entrypoint directories for different extension components
+  - Leverage the auto-import system for cleaner code
+  - Use the proper manifest configuration methods
+
+- When implementing extension features:
+
+  - Use WXT's built-in APIs and utilities instead of creating custom solutions
+  - Follow the recommended patterns for content scripts, background scripts, and UI components
+  - Utilize WXT's TypeScript integration for type safety
+
+- For content scripts:
+
+  - Consider the different UI integration options (integrated, shadow DOM, iframe)
+  - Be aware of isolated world vs. main world execution contexts
+  - Handle SPA navigation properly
+
+- When using storage:
+
+  - Leverage WXT's storage APIs for type-safe access
+  - Implement proper data versioning and migrations
+  - Use watchers for reactive updates
+
+- For messaging between extension components:
+
+  - Use WXT's messaging APIs for type-safe communication
+  - Structure message handlers properly
+
+- During development:
+
+  - Use WXT's dev mode for faster iteration
+  - Test across different browsers using WXT's browser targeting features
+  - Utilize the built-in testing tools
+
+- For deployment:
+  - Follow WXT's publishing guidelines
+  - Use the recommended automation tools for distribution
+
+## Always Consult Documentation
+
+Before implementing any feature, always check the WXT documentation at [https://wxt.dev/knowledge/docs.txt](https://wxt.dev/knowledge/docs.txt) for the most up-to-date and recommended approaches.
